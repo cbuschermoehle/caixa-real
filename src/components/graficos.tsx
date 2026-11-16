@@ -3,7 +3,9 @@ import { brl, brlCurto, dataEixo } from '../lib/format';
 
 /** Escala "bonita" para o eixo: até ~4 marcas em múltiplos de 1, 2 ou 5. */
 function marcas(max: number, min = 0): number[] {
-  const amp = Math.max(1, max - min);
+  // Valores em centavos: escala mínima de R$ 100 para não repetir "0" no eixo quando está tudo zerado.
+  if (max - min < 10_000) max = min + 10_000;
+  const amp = max - min;
   const bruto = amp / 4;
   const pot = 10 ** Math.floor(Math.log10(bruto));
   const passo = [1, 2, 5, 10].map((m) => m * pot).find((p) => p >= bruto)!;
@@ -36,7 +38,7 @@ const ROTULOS_PADRAO = { entradas: 'Entradas', saidas: 'Saídas', entrou: 'Entro
 export function BarrasEntradaSaida({ dados, rotuloEixo, rotulos = ROTULOS_PADRAO }: { dados: { data: string; entradas: number; saidas: number }[]; rotuloEixo?: (d: string) => string; rotulos?: typeof ROTULOS_PADRAO }) {
   const [foco, setFoco] = useState<number | null>(null);
   const [ref, L] = useLargura();
-  const max = Math.max(1, ...dados.flatMap((d) => [d.entradas, d.saidas]));
+  const max = Math.max(10_000, ...dados.flatMap((d) => [d.entradas, d.saidas]));
   const ys = marcas(max);
   const topo = ys[ys.length - 1];
   const w = L - M.l - M.r;

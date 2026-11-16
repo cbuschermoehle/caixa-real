@@ -1,0 +1,11 @@
+{
+  "name": "Caixa Real",
+  "short_name": "Caixa Real",
+  "description": "Controle financeiro em regime de caixa para pequenas empresas",
+  "lang": "pt-BR",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#f2f4f7",
+  "theme_color": "#16243a",
+  "icons": [{ "src": "icone.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
+}

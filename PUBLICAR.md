@@ -5,7 +5,7 @@
 - Dados e login: Supabase (projeto `caixa-real`, região São Paulo).
   - Tabela única `caixa` (uma linha por usuário, dados em JSON), criada por `supabase/schema.sql`.
   - Endereço e chave pública do Supabase ficam em `.env.production` (`VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`). A chave "anon" é pública por natureza; a segurança vem das regras da tabela.
-- Sem essas variáveis, o app roda em modo de teste (dados só no navegador), que é o usado no artifact do claude.ai (`npm run artifact`).
+- Sem essas variáveis, o app roda em modo de teste (dados só no navegador), que é o usado no artifact do claude.ai (`npm run artifact`, que compila no modo "teste" e ignora o .env.production).
 
 ## Ajustes no painel do Supabase
 1. SQL Editor → colar `supabase/schema.sql` → Run.

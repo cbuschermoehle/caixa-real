@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "test": "vitest run",
-    "artifact": "npm run build && node scripts/artifact.mjs"
+    "artifact": "tsc --noEmit && vite build --mode teste && node scripts/artifact.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "2.118.0",

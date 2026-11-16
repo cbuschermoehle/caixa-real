@@ -23,3 +23,6 @@ create policy "dono apaga" on public.caixa for delete to authenticated using ((s
 
 revoke all on public.caixa from anon;
 grant select, insert, update, delete on public.caixa to authenticated;
+
+-- Faz a API enxergar a tabela nova na hora.
+notify pgrst, 'reload schema';

@@ -163,7 +163,7 @@ function Moldura({ children }: { children: ReactNode }) {
     <main className="onboarding">
       <div className="onb-marca">
         <span className="logo" aria-hidden="true">R$</span>
-        <span>Caixa Real</span>
+        <span>MicroCaixa Fácil</span>
       </div>
       <section className="onb-passo">{children}</section>
     </main>

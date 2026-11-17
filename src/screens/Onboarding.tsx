@@ -67,7 +67,7 @@ export function Onboarding() {
     <main className="onboarding">
       <div className="onb-marca">
         <span className="logo" aria-hidden="true">R$</span>
-        <span>Caixa Real</span>
+        <span>MicroCaixa Fácil</span>
       </div>
       {passo === 1 ? (
         <section className="onb-passo">
@@ -94,7 +94,7 @@ export function Onboarding() {
             <button type="button" className="btn" onClick={verExemplo}>Abrir uma empresa de exemplo</button>
           </div>
           <div className="onb-exemplo">
-            <p>Já usa o Caixa Real em outro lugar?</p>
+            <p>Já usa o MicroCaixa Fácil em outro lugar?</p>
             <RestaurarCopia rotulo="Abrir uma cópia de segurança" confirmar={false} />
           </div>
         </section>

@@ -1,5 +1,5 @@
 // Guarda os arquivos do app para abrir rápido e funcionar com internet instável.
-const CACHE = 'caixa-real-v2';
+const CACHE = 'caixa-real-v3';
 self.addEventListener('install', (e) => self.skipWaiting());
 self.addEventListener('activate', (e) => e.waitUntil(self.clients.claim()));
 self.addEventListener('fetch', (e) => {

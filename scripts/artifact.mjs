@@ -4,7 +4,7 @@ const dir = 'dist/assets';
 const arquivos = readdirSync(dir);
 const css = arquivos.filter((f) => f.endsWith('.css')).map((f) => readFileSync(`${dir}/${f}`, 'utf8')).join('\n');
 const js = arquivos.filter((f) => f.endsWith('.js')).map((f) => readFileSync(`${dir}/${f}`, 'utf8')).join('\n');
-const html = `<title>Caixa Real</title>
+const html = `<title>MicroCaixa Fácil</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600..800&family=Manrope:wght@400..800&display=swap">
 <style>${css}</style>

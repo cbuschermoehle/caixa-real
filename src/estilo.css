@@ -582,3 +582,14 @@ input:focus, select:focus { border-color: var(--acento); outline: 2px solid colo
   .compromissos li { flex-direction: column; gap: 2px; }
   .compromissos .num { text-align: left; }
 }
+
+/* ---------- Investimentos e patrimônio ---------- */
+.faixa-tipo span { background: var(--acento); }
+.total-form { margin: 0; font-size: 1rem; }
+.texto-perigo { color: var(--saida); justify-self: start; }
+.compromissos .num .btn-link { display: flex; justify-content: flex-end; margin-left: auto; font-size: 0.85rem; }
+.compromissos li > span:first-child .btn-link { display: flex; font-size: 0.85rem; }
+@media (max-width: 520px) {
+  .compromissos .num .btn-link { justify-content: flex-start; margin-left: 0; }
+}
+.compromissos .lanc-meta { white-space: normal; overflow-wrap: anywhere; }

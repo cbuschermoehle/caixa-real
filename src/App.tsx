@@ -11,6 +11,7 @@ import { Relatorio } from './screens/Relatorio';
 import { Ajustes } from './screens/Ajustes';
 import { Extrato } from './screens/Extrato';
 import { Futuro } from './screens/Futuro';
+import { Patrimonio } from './screens/Patrimonio';
 import { FormRapido, ListaPendentes } from './components/Rapido';
 import { ehPessoal } from './data/planos';
 import { TrocaPerfil } from './components/Perfis';
@@ -20,6 +21,7 @@ const ROTAS = [
   { id: 'lancamentos', nome: 'Lançamentos', icone: 'lista' },
   { id: 'agenda', nome: 'A pagar e receber', curto: 'Agenda', icone: 'agenda' },
   { id: 'futuro', nome: 'Futuro', icone: 'futuro' },
+  { id: 'patrimonio', nome: 'Patrimônio', icone: 'patrimonio' },
   { id: 'extrato', nome: 'Extrato', icone: 'banco' },
   { id: 'relatorio', nome: 'Relatório', icone: 'relatorio' },
   { id: 'opcoes', nome: 'Ajustes', icone: 'ajustes' },
@@ -60,9 +62,10 @@ export function App() {
   const editar = (l: Lancamento) => setForm({ tipo: l.tipo, editar: l });
 
   if (!dados.empresa) return <Onboarding />;
-  // A tela Futuro é do perfil pessoal; na empresa, o longo prazo fica em "A pagar e receber".
-  const rotas = ROTAS.filter((r) => r.id !== 'futuro' || ehPessoal(dados.empresa));
-  const rotaAtual: Rota = rota === 'futuro' && !ehPessoal(dados.empresa) ? 'painel' : rota;
+  // Futuro e Patrimônio são do perfil pessoal; na empresa, o longo prazo fica em "A pagar e receber".
+  const soPessoal = (id: string) => id === 'futuro' || id === 'patrimonio';
+  const rotas = ROTAS.filter((r) => !soPessoal(r.id) || ehPessoal(dados.empresa));
+  const rotaAtual: Rota = soPessoal(rota) && !ehPessoal(dados.empresa) ? 'painel' : rota;
 
   return (
     <div className="app">
@@ -70,8 +73,9 @@ export function App() {
         <div className="barra-topo-in">
           <TrocaPerfil aoTrocar={() => ir('painel')} />
           <nav className="nav-larga" aria-label="Seções">
-            {rotas.map((r) => (
-              <a key={r.id} href={`#${r.id}`} aria-current={rotaAtual === r.id ? 'page' : undefined} onClick={(e) => { e.preventDefault(); ir(r.id); }}>{r.nome}</a>
+            {/* No pessoal a barra fica cheia: o Extrato abre pelos Lançamentos, como no celular. */}
+            {rotas.filter((r) => r.id !== 'extrato' || !ehPessoal(dados.empresa)).map((r) => (
+              <a key={r.id} href={`#${r.id}`} aria-current={rotaAtual === r.id || (rotaAtual === 'extrato' && r.id === 'lancamentos' && ehPessoal(dados.empresa)) ? 'page' : undefined} onClick={(e) => { e.preventDefault(); ir(r.id); }}>{r.nome}</a>
             ))}
           </nav>
           <button type="button" className="btn btn-primario so-largo" onClick={() => novo('entrada')}><Icone nome="mais" tamanho={18} /> Lançar</button>
@@ -81,6 +85,7 @@ export function App() {
       <main className="conteudo">
         {rotaAtual === 'painel' && <Painel novo={novo} ir={ir} rapido={() => setRapido(true)} pendentes={() => setVerPendentes(true)} />}
         {rotaAtual === 'futuro' && <Futuro ir={ir} />}
+        {rotaAtual === 'patrimonio' && <Patrimonio ir={ir} />}
         {rotaAtual === 'lancamentos' && <Livro editar={editar} ir={ir} />}
         {rotaAtual === 'agenda' && <Agenda baixa={setBaixa} editar={editar} />}
         {rotaAtual === 'relatorio' && <Relatorio />}

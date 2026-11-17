@@ -3,7 +3,8 @@ import type { Dados, Lancamento } from '../types';
 import { planoDoRamo, planoPessoal } from '../data/planos';
 import { dadosDeExemplo, dadosPessoaisDeExemplo } from '../data/exemplo';
 import { abrirCofre, guardarCofre, reducerCofre, vazio } from '../data/store';
-import { cascata, longoPrazo, rendaComprometida, saldos, totaisPrevistos } from './calc';
+import { cascata, longoPrazo, saldos, totaisPrevistos } from './calc';
+import { compromissos, futuroMensal, limitesDoMes, rendaComprometida } from './futuro';
 import { faturaDaCompra, faturaDoPagamento, faturasDoCartao, resumoCartao, sincronizarFaturas, vencimentoDaFatura } from './cartao';
 import { confirmarLinha, vinculoPara } from './conciliar';
 
@@ -145,7 +146,7 @@ describe('perfil pessoal', () => {
     expect(c.blocos.dividas.previsto).toBe(200_000);
     expect(c.operacional).toEqual([600_000, -200_000]);
     expect(c.aposInvestimentos[0]).toBe(550_000);
-    const rc = rendaComprometida(c);
+    const rc = rendaComprometida(d, '2026-11');
     expect(rc.pct).toBe(50);
     expect(rc.faixa).toBe('ok');
   });
@@ -222,5 +223,60 @@ describe('perfis no mesmo login', () => {
     expect(c.perfis.map((x) => x.empresa?.nome)).toEqual(['Casa', 'Metalúrgica Exemplo']);
     c = reducerCofre(c, { t: 'restaurar', dados: base() });
     expect(c.perfis).toHaveLength(2);
+  });
+});
+
+describe('futuro e lançamento rápido', () => {
+  const montar = () => {
+    const d = base();
+    const sal = cat(d, 'Salário');
+    const carro = cat(d, 'Financiamento do veículo');
+    d.lancamentos = [
+      // Salário previsto todo mês, de nov a fev.
+      ...[0, 1, 2, 3].map((i) => l({ tipo: 'entrada', valor: 1_000_000, categoriaId: sal, data: ['2026-11-05', '2026-12-05', '2027-01-05', '2027-02-05'][i], status: i ? 'previsto' : 'pago' })),
+      // Escola todo mês.
+      ...['2026-11-08', '2026-12-08', '2027-01-08', '2027-02-08'].map((data) => l({ valor: 200_000, categoriaId: cat(d, 'Escola e cursos'), data, status: data <= '2026-11-20' ? 'pago' : 'previsto' })),
+      // Carro: últimas 2 parcelas (dez e jan).
+      ...[0, 1].map((i) => l({ valor: 150_000, categoriaId: carro, data: ['2026-12-15', '2027-01-15'][i], status: 'previsto', serieId: 'carro', parcela: { n: 47 + i, total: 48 }, descricao: 'Financiamento do carro' })),
+      // TV em 3x no cartão.
+      ...[0, 1, 2].map((i) => l({ contaId: 'cr', valor: 100_000, categoriaId: cat(d, 'Casa e manutenção'), data: '2026-11-06', fatura: ['2026-12', '2027-01', '2027-02'][i], serieId: 'tv', parcela: { n: i + 1, total: 3 }, descricao: 'TV' })),
+      l({ contaId: 'cr', valor: 30_000, categoriaId: cat(d, 'Mercado'), data: '2026-11-07' }),
+    ];
+    return sincronizarFaturas(d, '2026-11-20');
+  };
+
+  it('comprometido de cada mês = essenciais + dívidas + parcelas do cartão', () => {
+    const m = futuroMensal(montar(), '2026-11', 4);
+    expect(m.map((x) => [x.mes, x.renda, x.comprometido, x.pct])).toEqual([
+      ['2026-11', 1_000_000, 200_000, 20],
+      ['2026-12', 1_000_000, 450_000, 45],
+      ['2027-01', 1_000_000, 450_000, 45],
+      ['2027-02', 1_000_000, 300_000, 30],
+    ]);
+    // Compra comum (não parcelada) no cartão entra em "outros", fora do comprometido.
+    expect(m[1].outros).toBe(30_000);
+  });
+
+  it('lista o que termina primeiro, com o que falta pagar', () => {
+    const c = compromissos(montar(), '2026-11-20');
+    expect(c.map((x) => [x.nome, x.restantes, x.ultimoMes, x.valorRestante, x.noCartao])).toEqual([
+      ['Financiamento do carro', 2, '2027-01', 300_000, false],
+      ['TV', 3, '2027-02', 300_000, true],
+    ]);
+  });
+
+  it('limite por categoria compara com o gasto do mês (cartão no mês da fatura)', () => {
+    const d = montar();
+    d.categorias = d.categorias.map((c) => (c.nome === 'Mercado' ? { ...c, limite: 40_000 } : c));
+    expect(limitesDoMes(d, '2026-11')).toEqual([expect.objectContaining({ gasto: 0, pct: 0 })]);
+    expect(limitesDoMes(d, '2026-12')).toEqual([expect.objectContaining({ gasto: 30_000, pct: 75, falta: 10_000 })]);
+  });
+
+  it('pendente fica guardado no perfil e sai ao completar', () => {
+    let c = abrirCofre(base());
+    c = reducerCofre(c, { t: 'pendente', pendente: { id: 'p1', valor: 18_740, data: '2026-11-17', descricao: 'mercado', criadoEm: '2026-11-17' } });
+    expect(guardarCofre(c.perfis).pendentes).toHaveLength(1);
+    c = reducerCofre(c, { t: 'excluirPendente', id: 'p1' });
+    expect(c.perfis[0].pendentes).toEqual([]);
   });
 });

@@ -109,7 +109,9 @@ export function dadosPessoaisDeExemplo(ref = hoje()) {
   const cartao: Conta = { ...conta('Cartão de crédito', 'cartao', 0), cartao: { fechamento: 3, vencimento: 10, limite: 1_500_000, contaPagamentoId: cc.id } };
   const inv = conta('Investimentos', 'aplicacao', 62_000);
   const contas = [cc, carteira, cartao, inv];
-  const categorias: Categoria[] = planoPessoal();
+  const categorias: Categoria[] = planoPessoal().map((c) =>
+    c.nome === 'Mercado' ? { ...c, limite: 250_000 } : c.nome === 'Restaurantes e delivery' ? { ...c, limite: 60_000 } : c,
+  );
   const cat = (nome: string) => categorias.find((c) => c.nome === nome)!.id;
 
   let semente = 11;
@@ -128,7 +130,8 @@ export function dadosPessoaisDeExemplo(ref = hoje()) {
     add('saida', data, valor, categoria, descricao, cartao.id, { status: 'pago', ...extra });
   };
 
-  const fim = somaDias(ref, 40);
+  // Contas fixas e renda já previstas para os próximos 12 meses (como se lançadas com "Todo mês").
+  const fim = somaMeses(ref, 12);
   for (let d = inicio; d <= fim; d = somaDias(d, 1)) {
     const dia = Number(d.slice(8, 10));
     const semana = new Date(Number(d.slice(0, 4)), Number(d.slice(5, 7)) - 1, dia).getDay();
@@ -177,5 +180,9 @@ export function dadosPessoaisDeExemplo(ref = hoje()) {
   let dados: Dados = { versao: 1, empresa, contas, categorias, lancamentos: lanc };
   dados = sincronizarFaturas(dados, ref);
   const lancamentos = dados.lancamentos.map((l) => (l.faturaAuto && l.data < ref ? { ...l, status: 'pago' as const } : l));
-  return { empresa, contas, categorias, lancamentos, geradoEm: isoDe(new Date()) };
+  const pendentes = [
+    { id: novoId(), valor: 4_750, data: ref, descricao: 'padaria', criadoEm: ref },
+    { id: novoId(), valor: 18_740, data: somaDias(ref, -1), descricao: 'mercado', criadoEm: ref },
+  ];
+  return { empresa, contas, categorias, lancamentos, pendentes, geradoEm: isoDe(new Date()) };
 }

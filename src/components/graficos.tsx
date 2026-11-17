@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { brl, brlCurto, dataEixo } from '../lib/format';
+import type { MesFuturo } from '../lib/futuro';
 
 /** Escala "bonita" para o eixo: até ~4 marcas em múltiplos de 1, 2 ou 5. */
 function marcas(max: number, min = 0): number[] {
@@ -140,6 +141,79 @@ export function LinhaSaldo({ pontos, destaque }: { pontos: { data: string; saldo
         <strong>{dataEixo(f.data)}</strong>
         <span className={f.saldo < 0 ? 'neg' : ''}>Saldo projetado {brl(f.saldo)}</span>
         {foco === null && <span className="ajuda">Passe o dedo no gráfico para ver cada dia</span>}
+      </figcaption>
+    </figure>
+  );
+}
+
+/** Futuro: barras empilhadas do que já está comprometido em cada mês e a linha da renda prevista. */
+export function BarrasFuturo({ meses, rotulo }: { meses: MesFuturo[]; rotulo: (mes: string) => string }) {
+  const [foco, setFoco] = useState<number | null>(null);
+  const [ref, L] = useLargura();
+  const totalBarra = (m: (typeof meses)[number]) => Math.max(0, m.essenciais) + Math.max(0, m.dividas) + Math.max(0, m.parcelasCartao) + Math.max(0, m.outros);
+  const max = Math.max(10_000, ...meses.flatMap((m) => [totalBarra(m), m.renda]));
+  const ys = marcas(max);
+  const topo = ys[ys.length - 1];
+  const w = L - M.l - M.r;
+  const h = A - M.t - M.b;
+  const y = (v: number) => M.t + h - (v / topo) * h;
+  const passo = w / meses.length;
+  const barra = Math.min(34, passo - 6);
+  const cx = (i: number) => M.l + passo * i + passo / 2;
+  const cada = Math.ceil(meses.length / Math.max(3, Math.floor(w / 52)));
+  const comRenda = meses.map((m, i) => ({ m, i })).filter(({ m }) => m.renda > 0);
+  const linha = comRenda.map(({ m, i }, k) => `${k ? 'L' : 'M'}${cx(i).toFixed(1)},${y(m.renda).toFixed(1)}`).join('');
+  const f = foco !== null ? meses[foco] : null;
+  const CLASSES = { essenciais: 'barra-essenciais', dividas: 'barra-dividas', parcelasCartao: 'barra-parcelas', outros: 'barra-outros' } as const;
+  return (
+    <figure className="grafico" ref={ref}>
+      <svg viewBox={`0 0 ${L} ${A}`} role="img" aria-label="Renda comprometida por mês" onMouseLeave={() => setFoco(null)}>
+        {ys.map((v) => (
+          <g key={v}>
+            <line x1={M.l} x2={L - M.r} y1={y(v)} y2={y(v)} className="grade" />
+            <text x={M.l - 8} y={y(v) + 4} textAnchor="end" className="eixo">{brlCurto(v)}</text>
+          </g>
+        ))}
+        {meses.map((m, i) => {
+          let base = 0;
+          const partes = (Object.keys(CLASSES) as (keyof typeof CLASSES)[]).map((k) => {
+            const v = Math.max(0, m[k]);
+            const y1 = y(base + v);
+            const alt = y(base) - y1;
+            base += v;
+            return v > 0 ? <rect key={k} x={cx(i) - barra / 2} y={y1} width={barra} height={Math.max(0, alt)} className={CLASSES[k]} /> : null;
+          });
+          return (
+            <g key={m.mes} onMouseEnter={() => setFoco(i)} onClick={() => setFoco(i)}>
+              <rect x={M.l + passo * i} y={M.t} width={passo} height={h} fill="transparent" className={foco === i ? 'foco-coluna' : ''} />
+              {partes}
+              {i % cada === 0 && <text x={cx(i)} y={A - 8} textAnchor="middle" className="eixo">{rotulo(m.mes)}</text>}
+            </g>
+          );
+        })}
+        {comRenda.length > 1 && <path d={linha} className="linha-renda" />}
+        {comRenda.map(({ m, i }) => <circle key={m.mes} cx={cx(i)} cy={y(m.renda)} r="3.5" className="ponto-renda" />)}
+      </svg>
+      <figcaption className="legenda legenda-futuro">
+        {f ? (
+          <>
+            <strong>{rotulo(f.mes)}</strong>
+            <span>Renda {brl(f.renda)}</span>
+            <span><i className="chip-cor c-essenciais" />Essenciais {brl(f.essenciais)}</span>
+            <span><i className="chip-cor c-dividas" />Dívidas {brl(f.dividas)}</span>
+            <span><i className="chip-cor c-parcelas" />Parcelas no cartão {brl(f.parcelasCartao)}</span>
+            {f.outros > 0 && <span><i className="chip-cor c-outros" />Outros {brl(f.outros)}</span>}
+          </>
+        ) : (
+          <>
+            <span><i className="chip-cor c-renda" />Renda prevista</span>
+            <span><i className="chip-cor c-essenciais" />Essenciais</span>
+            <span><i className="chip-cor c-dividas" />Dívidas</span>
+            <span><i className="chip-cor c-parcelas" />Parcelas no cartão</span>
+            <span><i className="chip-cor c-outros" />Outros já lançados</span>
+            <span className="ajuda">Toque num mês para ver os valores</span>
+          </>
+        )}
       </figcaption>
     </figure>
   );

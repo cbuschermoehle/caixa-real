@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useReducer, useRef, type ReactNode } from 'react';
 import { VERSAO_PLANO, atualizarPlano, blocosDe } from './planos';
 import { sincronizarFaturas } from '../lib/cartao';
-import type { Categoria, Conta, Dados, Empresa, Importacao, Lancamento, ModeloColunas, Regra, TransacaoExtrato } from '../types';
+import type { Categoria, Conta, Dados, Empresa, Importacao, Lancamento, ModeloColunas, Pendente, Regra, TransacaoExtrato } from '../types';
 
 /*
  * Camada de dados. Sem nuvem configurada, tudo fica guardado no navegador (localStorage).
@@ -16,7 +16,7 @@ const CHAVE_PERFIL = 'caixa-real:perfil';
 export const vazio: Dados = { versao: 1, empresa: null, contas: [], categorias: [], lancamentos: [] };
 
 export type Acao =
-  | { t: 'iniciar'; empresa: Empresa; contas: Conta[]; categorias: Categoria[]; lancamentos?: Lancamento[] }
+  | { t: 'iniciar'; empresa: Empresa; contas: Conta[]; categorias: Categoria[]; lancamentos?: Lancamento[]; pendentes?: Pendente[] }
   | { t: 'empresa'; empresa: Empresa }
   | { t: 'conta'; conta: Conta }
   | { t: 'categoria'; categoria: Categoria }
@@ -29,6 +29,8 @@ export type Acao =
   | { t: 'regra'; regra: Regra }
   | { t: 'excluirRegra'; id: string }
   | { t: 'restaurar'; dados: Dados }
+  | { t: 'pendente'; pendente: Pendente }
+  | { t: 'excluirPendente'; id: string }
   | { t: 'zerar' };
 
 /** Ações sobre o conjunto de perfis (empresa e pessoal) da mesma conta. */
@@ -48,7 +50,7 @@ function upsert<T extends { id: string }>(lista: T[], item: T): T[] {
 export function reducer(d: Dados, a: Acao): Dados {
   switch (a.t) {
     case 'iniciar':
-      return { versao: 1, empresa: a.empresa, contas: a.contas, categorias: a.categorias, lancamentos: a.lancamentos ?? [], planoVersao: VERSAO_PLANO };
+      return { versao: 1, empresa: a.empresa, contas: a.contas, categorias: a.categorias, lancamentos: a.lancamentos ?? [], pendentes: a.pendentes, planoVersao: VERSAO_PLANO };
     case 'empresa':
       return { ...d, empresa: a.empresa };
     case 'conta':
@@ -107,6 +109,10 @@ export function reducer(d: Dados, a: Acao): Dados {
       return { ...d, regras: (d.regras ?? []).filter((r) => r.id !== a.id) };
     case 'restaurar':
       return migrar(semExtras(a.dados));
+    case 'pendente':
+      return { ...d, pendentes: upsert(d.pendentes ?? [], a.pendente) };
+    case 'excluirPendente':
+      return { ...d, pendentes: (d.pendentes ?? []).filter((p) => p.id !== a.id) };
     case 'zerar':
       return vazio;
   }

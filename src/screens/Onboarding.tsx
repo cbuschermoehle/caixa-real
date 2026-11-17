@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { Conta, Ramo, TipoConta, TipoPerfil } from '../types';
+import type { Conta, Pendente, Ramo, TipoConta, TipoPerfil } from '../types';
 import { useDados } from '../data/store';
 import { RAMOS, planoDoRamo } from '../data/planos';
 import { dadosDeExemplo, dadosPessoaisDeExemplo } from '../data/exemplo';
@@ -58,7 +58,7 @@ export function Onboarding() {
 
   const verExemplo = () => {
     const ex = pessoal ? dadosPessoaisDeExemplo() : dadosDeExemplo();
-    despachar({ t: 'iniciar', empresa: ex.empresa, contas: ex.contas, categorias: ex.categorias, lancamentos: ex.lancamentos });
+    despachar({ t: 'iniciar', empresa: ex.empresa, contas: ex.contas, categorias: ex.categorias, lancamentos: ex.lancamentos, pendentes: 'pendentes' in ex ? (ex.pendentes as Pendente[]) : undefined });
   };
 
   function avancar() {

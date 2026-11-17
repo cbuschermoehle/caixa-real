@@ -2,14 +2,15 @@ import { nomeCategoria } from '../lib/categorias';
 import { useState } from 'react';
 import type { TipoLancamento } from '../types';
 import { useDados } from '../data/store';
-import { cascata, entradasSaidasPorDia, porMes, porSemana, pontoEquilibrio, previstosEntre, rendaComprometida, saldos, totaisPrevistos } from '../lib/calc';
+import { cascata, entradasSaidasPorDia, porMes, porSemana, pontoEquilibrio, previstosEntre, saldos, totaisPrevistos } from '../lib/calc';
 import { ehPessoal } from '../data/planos';
+import { limitesDoMes, rendaComprometida } from '../lib/futuro';
 import { fechamentoDaFatura, resumoCartao, vencimentoDaFatura, type ResumoCartao } from '../lib/cartao';
 import { brl, dataBR, dataEixo, hoje, mesCurto, mesDe, nomeMes, somaDias } from '../lib/format';
 import { BarrasEntradaSaida } from '../components/graficos';
 import { BarraComprometida, Icone, Segmentos, Valor } from '../components/ui';
 
-export function Painel({ novo, ir }: { novo: (t: TipoLancamento) => void; ir: (rota: string) => void }) {
+export function Painel({ novo, ir, rapido, pendentes }: { novo: (t: TipoLancamento) => void; ir: (rota: string) => void; rapido: () => void; pendentes: () => void }) {
   const { dados } = useDados();
   const [verContas, setVerContas] = useState(false);
   const [periodo, setPeriodo] = useState<'dias' | 'semanas' | 'meses'>('dias');
@@ -27,8 +28,10 @@ export function Painel({ novo, ir }: { novo: (t: TipoLancamento) => void; ir: (r
   const entradasMes = c.blocos.entradas.realizado;
   const pctMargem = entradasMes ? Math.round((c.margem[0] / entradasMes) * 100) : null;
   const pessoal = ehPessoal(dados.empresa);
-  const rc = rendaComprometida(c);
+  const rc = rendaComprometida(dados, mes);
   const pctSobrou = entradasMes ? Math.round((c.operacional[0] / entradasMes) * 100) : null;
+  const nPendentes = dados.pendentes?.length ?? 0;
+  const limites = limitesDoMes(dados, mes);
   const cartoes = dados.contas.filter((x) => !x.arquivada).map((x) => resumoCartao(dados, x, h)).filter((x): x is ResumoCartao => !!x);
   const serie = periodo === 'dias' ? entradasSaidasPorDia(dados, somaDias(h, -6), h) : periodo === 'semanas' ? porSemana(dados, h, 8) : porMes(dados, mes, 12);
 
@@ -58,6 +61,19 @@ export function Painel({ novo, ir }: { novo: (t: TipoLancamento) => void; ir: (r
         <button type="button" className="btn-acao btn-saida" onClick={() => novo('saida')}><Icone nome="menos" /> Nova saída</button>
         <button type="button" className="btn-acao btn-transferencia" onClick={() => novo('transferencia')} aria-label="Transferência entre contas"><Icone nome="troca" /><span className="so-largo">Transferir</span></button>
       </div>
+
+      <button type="button" className="btn-rapido" onClick={rapido}>
+        <Icone nome="raio" />
+        <span><strong>Rápido</strong> · anote um gasto agora e complete depois</span>
+      </button>
+
+      {nPendentes > 0 && (
+        <button type="button" className="faixa-extrato faixa-pendentes" onClick={pendentes}>
+          <Icone nome="lista" />
+          <span><strong>{nPendentes} {nPendentes === 1 ? 'gasto pendente' : 'gastos pendentes'}</strong> para completar (categoria e como pagou)</span>
+          <Icone nome="seta" tamanho={16} />
+        </button>
+      )}
 
       <button type="button" className="faixa-extrato" onClick={() => ir('extrato')}>
         <Icone nome="banco" />
@@ -126,9 +142,10 @@ export function Painel({ novo, ir }: { novo: (t: TipoLancamento) => void; ir: (r
                   <>
                     <BarraComprometida pct={rc.pct} faixa={rc.faixa!} />
                     <p className="equilibrio-texto">
-                      <strong>{rc.pct}%</strong> da renda do mês vai para gastos essenciais e dívidas ({brl(rc.comprometido)} de {brl(rc.renda)}).
+                      <strong>{rc.pct}%</strong> da renda do mês vai para gastos essenciais, dívidas e parcelas ({brl(rc.comprometido)} de {brl(rc.renda)}).
                       {rc.faixa === 'ok' ? ' Tranquilo.' : rc.faixa === 'atencao' ? ' Atenção: acima de 50%.' : ' Apertado: acima de 70%.'}
                     </p>
+                    <button type="button" className="btn-link" onClick={() => ir('futuro')}>Ver os próximos meses <Icone nome="seta" tamanho={16} /></button>
                   </>
                 )}
               </div>
@@ -165,6 +182,29 @@ export function Painel({ novo, ir }: { novo: (t: TipoLancamento) => void; ir: (r
           )}
         </section>
       </div>
+
+      {limites.length > 0 && (
+        <section className="cartao" aria-labelledby="t-limites">
+          <header className="cartao-topo">
+            <h2 id="t-limites">Limites do mês</h2>
+            <button type="button" className="btn-link" onClick={() => ir('opcoes')}>Mudar limites <Icone nome="seta" tamanho={16} /></button>
+          </header>
+          <ul className="limites">
+            {limites.map((x) => (
+              <li key={x.categoria.id}>
+                <div className="limite-topo">
+                  <span>{x.categoria.nome}</span>
+                  <span className={`num ${x.pct > 100 ? 'neg' : ''}`}>{brl(x.gasto)} de {brl(x.limite)}</span>
+                </div>
+                <div className={`barra-progresso faixa-${x.pct < 80 ? 'ok' : x.pct <= 100 ? 'atencao' : 'alto'}`} role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.min(100, x.pct)} aria-label={`Limite de ${x.categoria.nome}`}>
+                  <span style={{ width: `${Math.min(100, x.pct)}%` }} />
+                </div>
+                <p className="ajuda">{x.falta >= 0 ? `Ainda pode gastar ${brl(x.falta)} (${x.pct}% usado).` : `Passou ${brl(-x.falta)} do limite.`}</p>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       {cartoes.length > 0 && (
         <section className="cartao" aria-labelledby="t-cartoes">

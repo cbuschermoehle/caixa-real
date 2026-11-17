@@ -1,8 +1,7 @@
 import { emArvore, nomeCategoria, rotuloDocumento } from '../lib/categorias';
 import { useMemo, useState } from 'react';
 import type { Dados, Importacao, Lancamento, Regra, TransacaoExtrato } from '../types';
-import { useDados } from '../data/store';
-import { BLOCOS } from '../data/planos';
+import { useBlocos, useDados } from '../data/store';
 import { aprender, confirmarDividida, confirmarLinha, diferencaDaBaixa, previstosParaBaixa, regraPara, sentidoDe, vinculoPara, type Escolha } from '../lib/conciliar';
 import {
   adivinharMapeamento, aplicarMapeamento, assinatura, decodificar, marcarRepetidas, formatoDoArquivo, lerCSV, lerOFX, lerXLSX,
@@ -42,6 +41,7 @@ function sugerir(dados: Dados, pendentes: TransacaoExtrato[]): Map<string, Suges
 
 export function Extrato() {
   const { dados, despachar } = useDados();
+  const blocos = useBlocos();
   const [importando, setImportando] = useState(false);
   const [conta, setConta] = useState('');
   const [escolhas, setEscolhas] = useState<Record<string, string>>({});
@@ -144,7 +144,7 @@ export function Extrato() {
                               </option>
                             </optgroup>
                           )}
-                          {BLOCOS.map((b) => {
+                          {blocos.map((b) => {
                             const cs = emArvore(dados.categorias.filter((c) => c.bloco === b.id && c.sentido === sentido), dados.categorias);
                             return cs.length ? (
                               <optgroup key={b.id} label={b.nome}>
@@ -363,6 +363,9 @@ function Importar({ aoFechar }: { aoFechar: () => void }) {
         <Campo rotulo="De qual banco é este extrato?" id="i-conta">
           <SeletorConta id="i-conta" valor={contaId} aoMudar={(v) => { setContaId(v); setLido(null); }} contas={ativas} />
         </Campo>
+        {contaId && ativas.find((c) => c.id === contaId)?.tipo === 'cartao' && (
+          <p className="ajuda">Fatura de cartão: as compras precisam aparecer como saída (−). Se vierem como entrada, ligue "Inverter sinal". O pagamento da fatura que aparece neste arquivo pode ser ignorado no Inbox, porque ele já sai da conta corrente.</p>
+        )}
         {!contaId ? (
           <p className="ajuda">Escolha primeiro a conta do banco deste extrato (por exemplo, o arquivo do Nubank vai na conta do Nubank).</p>
         ) : !lido ? (

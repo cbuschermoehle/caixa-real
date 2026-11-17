@@ -2,10 +2,12 @@ import { nomeCategoria } from '../lib/categorias';
 import { useState } from 'react';
 import type { TipoLancamento } from '../types';
 import { useDados } from '../data/store';
-import { cascata, entradasSaidasPorDia, porMes, porSemana, pontoEquilibrio, previstosEntre, saldos, totaisPrevistos } from '../lib/calc';
+import { cascata, entradasSaidasPorDia, porMes, porSemana, pontoEquilibrio, previstosEntre, rendaComprometida, saldos, totaisPrevistos } from '../lib/calc';
+import { ehPessoal } from '../data/planos';
+import { fechamentoDaFatura, resumoCartao, vencimentoDaFatura, type ResumoCartao } from '../lib/cartao';
 import { brl, dataBR, dataEixo, hoje, mesCurto, mesDe, nomeMes, somaDias } from '../lib/format';
 import { BarrasEntradaSaida } from '../components/graficos';
-import { Icone, Segmentos, Valor } from '../components/ui';
+import { BarraComprometida, Icone, Segmentos, Valor } from '../components/ui';
 
 export function Painel({ novo, ir }: { novo: (t: TipoLancamento) => void; ir: (rota: string) => void }) {
   const { dados } = useDados();
@@ -24,6 +26,10 @@ export function Painel({ novo, ir }: { novo: (t: TipoLancamento) => void; ir: (r
   const pe = pontoEquilibrio(dados, mes);
   const entradasMes = c.blocos.entradas.realizado;
   const pctMargem = entradasMes ? Math.round((c.margem[0] / entradasMes) * 100) : null;
+  const pessoal = ehPessoal(dados.empresa);
+  const rc = rendaComprometida(c);
+  const pctSobrou = entradasMes ? Math.round((c.operacional[0] / entradasMes) * 100) : null;
+  const cartoes = dados.contas.filter((x) => !x.arquivada).map((x) => resumoCartao(dados, x, h)).filter((x): x is ResumoCartao => !!x);
   const serie = periodo === 'dias' ? entradasSaidasPorDia(dados, somaDias(h, -6), h) : periodo === 'semanas' ? porSemana(dados, h, 8) : porMes(dados, mes, 12);
 
   return (
@@ -39,7 +45,7 @@ export function Painel({ novo, ir }: { novo: (t: TipoLancamento) => void; ir: (r
           <ul className="lista-contas">
             {s.porConta.map(({ conta, saldo }) => (
               <li key={conta.id}>
-                <span>{conta.nome}{conta.tipo === 'aplicacao' && <em> · aplicação</em>}</span>
+                <span>{conta.nome}{conta.tipo === 'aplicacao' && <em> · aplicação</em>}{conta.tipo === 'cartao' && <em> · cartão (compras ainda não pagas)</em>}</span>
                 <span className="num">{brl(saldo)}</span>
               </li>
             ))}
@@ -103,34 +109,74 @@ export function Painel({ novo, ir }: { novo: (t: TipoLancamento) => void; ir: (r
             <h2 id="t-mes">{nomeMes(mes).replace(/^./, (x) => x.toUpperCase())}</h2>
             <button type="button" className="btn-link" onClick={() => ir('relatorio')}>Relatório <Icone nome="seta" tamanho={16} /></button>
           </header>
-          <dl className="pares">
-            <div><dt>Entrou</dt><dd className="pos">{brl(entradasMes)}</dd></div>
-            <div>
-              <dt>Margem de contribuição</dt>
-              <dd>{brl(c.margem[0])}{pctMargem !== null && <small> ({pctMargem}% das entradas)</small>}</dd>
-            </div>
-          </dl>
-          <div className="equilibrio">
-            <p className="rotulo">Ponto de equilíbrio</p>
-            {pe.fixas === 0 ? (
-              <p className="ajuda">Lance as despesas fixas do mês para ver em que dia elas ficam cobertas.</p>
-            ) : (
-              <>
-                <div className="barra-progresso" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.min(100, Math.round((Math.max(0, pe.margemAcumulada) / pe.fixas) * 100))}>
-                  <span style={{ width: `${Math.min(100, (Math.max(0, pe.margemAcumulada) / pe.fixas) * 100)}%` }} className={pe.dia ? 'cheia' : ''} />
+          {pessoal ? (
+            <>
+              <dl className="pares">
+                <div><dt>Renda recebida</dt><dd className="pos">{brl(entradasMes)}</dd></div>
+                <div>
+                  <dt>Quanto sobrou</dt>
+                  <dd className={c.operacional[0] < 0 ? 'neg' : ''}>{brl(c.operacional[0])}{pctSobrou !== null && <small> ({pctSobrou}% da renda)</small>}</dd>
                 </div>
-                <p className="equilibrio-texto">
-                  {pe.dia ? (
-                    <>Atingido em <strong>{dataBR(pe.dia)}</strong>. As despesas fixas de {brl(pe.fixas)} já estão cobertas.</>
-                  ) : (
-                    <>Faltam <strong>{brl(pe.falta)}</strong> de margem para cobrir as despesas fixas de {brl(pe.fixas)}.</>
-                  )}
-                </p>
-              </>
-            )}
-          </div>
+              </dl>
+              <div className="equilibrio">
+                <p className="rotulo">Renda comprometida</p>
+                {rc.pct === null ? (
+                  <p className="ajuda">Lance a renda do mês (pode ser prevista) para ver quanto dela já está preso em gastos essenciais e dívidas.</p>
+                ) : (
+                  <>
+                    <BarraComprometida pct={rc.pct} faixa={rc.faixa!} />
+                    <p className="equilibrio-texto">
+                      <strong>{rc.pct}%</strong> da renda do mês vai para gastos essenciais e dívidas ({brl(rc.comprometido)} de {brl(rc.renda)}).
+                      {rc.faixa === 'ok' ? ' Tranquilo.' : rc.faixa === 'atencao' ? ' Atenção: acima de 50%.' : ' Apertado: acima de 70%.'}
+                    </p>
+                  </>
+                )}
+              </div>
+            </>
+          ) : (
+            <>
+          <dl className="pares">
+              <div><dt>Entrou</dt><dd className="pos">{brl(entradasMes)}</dd></div>
+              <div>
+                <dt>Margem de contribuição</dt>
+                <dd>{brl(c.margem[0])}{pctMargem !== null && <small> ({pctMargem}% das entradas)</small>}</dd>
+              </div>
+            </dl>
+            <div className="equilibrio">
+              <p className="rotulo">Ponto de equilíbrio</p>
+              {pe.fixas === 0 ? (
+                <p className="ajuda">Lance as despesas fixas do mês para ver em que dia elas ficam cobertas.</p>
+              ) : (
+                <>
+                  <div className="barra-progresso" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.min(100, Math.round((Math.max(0, pe.margemAcumulada) / pe.fixas) * 100))}>
+                    <span style={{ width: `${Math.min(100, (Math.max(0, pe.margemAcumulada) / pe.fixas) * 100)}%` }} className={pe.dia ? 'cheia' : ''} />
+                  </div>
+                  <p className="equilibrio-texto">
+                    {pe.dia ? (
+                      <>Atingido em <strong>{dataBR(pe.dia)}</strong>. As despesas fixas de {brl(pe.fixas)} já estão cobertas.</>
+                    ) : (
+                      <>Faltam <strong>{brl(pe.falta)}</strong> de margem para cobrir as despesas fixas de {brl(pe.fixas)}.</>
+                    )}
+                  </p>
+                </>
+              )}
+            </div>
+            </>
+          )}
         </section>
       </div>
+
+      {cartoes.length > 0 && (
+        <section className="cartao" aria-labelledby="t-cartoes">
+          <header className="cartao-topo">
+            <h2 id="t-cartoes">{cartoes.length === 1 ? 'Cartão de crédito' : 'Cartões de crédito'}</h2>
+            <button type="button" className="btn-link" onClick={() => ir('agenda')}>Faturas a pagar <Icone nome="seta" tamanho={16} /></button>
+          </header>
+          <div className="cartoes">
+            {cartoes.map((r) => <ResumoDoCartao key={r.conta.id} r={r} hoje={h} />)}
+          </div>
+        </section>
+      )}
 
       <section className="cartao" aria-labelledby="t-grafico">
         <header className="cartao-topo">
@@ -139,6 +185,40 @@ export function Painel({ novo, ir }: { novo: (t: TipoLancamento) => void; ir: (r
         </header>
         <BarrasEntradaSaida dados={serie} rotuloEixo={periodo === 'meses' ? mesCurto : periodo === 'semanas' ? (d) => dataEixo(d) : undefined} />
       </section>
+    </div>
+  );
+}
+
+function ResumoDoCartao({ r, hoje: h }: { r: ResumoCartao; hoje: string }) {
+  const limite = r.conta.cartao.limite;
+  const pct = limite ? Math.min(100, Math.round((r.usado / limite) * 100)) : null;
+  const proximas = r.aPagar.filter((f) => f.mes !== r.mesAberta).slice(0, 4);
+  return (
+    <div className="cartao-credito">
+      <div className="cartao-credito-topo">
+        <strong>{r.conta.nome}</strong>
+        <span className="num">{brl(r.aberta?.total ?? 0)}</span>
+      </div>
+      <p className="ajuda">Fatura de {mesCurto(`${r.mesAberta}-01`)}, aberta: fecha em {dataBR(fechamentoDaFatura(r.mesAberta, r.conta.cartao))} e vence em {dataBR(vencimentoDaFatura(r.mesAberta, r.conta.cartao))}.</p>
+      {proximas.length > 0 && (
+        <ul className="faturas">
+          {proximas.map((f) => (
+            <li key={f.mes}>
+              <span>{f.vencimento < h ? 'Atrasada: ' : ''}Fatura de {mesCurto(`${f.mes}-01`)} · vence {dataBR(f.vencimento)}</span>
+              <span className={`num ${f.vencimento < h ? 'neg' : ''}`}>{brl(f.falta)}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {r.futuro > 0 && <p className="ajuda">Já comprometido em parcelas nas próximas faturas: <strong>{brl(r.futuro)}</strong>.</p>}
+      {pct !== null && (
+        <>
+          <div className={`barra-progresso faixa-${pct <= 50 ? 'ok' : pct <= 80 ? 'atencao' : 'alto'}`} role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct} aria-label="Limite usado">
+            <span style={{ width: `${pct}%` }} />
+          </div>
+          <p className="ajuda">Limite usado: {brl(r.usado)} de {brl(limite!)} · disponível {brl(Math.max(0, limite! - r.usado))}.</p>
+        </>
+      )}
     </div>
   );
 }

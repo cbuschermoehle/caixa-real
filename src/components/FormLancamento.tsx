@@ -2,7 +2,8 @@ import { useState } from 'react';
 import type { Documento, Lancamento, TipoLancamento } from '../types';
 import { useDados } from '../data/store';
 import { nomeCategoria, rotuloDocumento } from '../lib/categorias';
-import { brl, dataBR, hoje, novoId, parseValor, somaMeses, valorParaCampo } from '../lib/format';
+import { brl, dataBR, hoje, mesCurto, novoId, parseValor, somaMeses, somaMesesMes, valorParaCampo } from '../lib/format';
+import { ehCartao, faturaDaCompra, vencimentoDaFatura } from '../lib/cartao';
 import { Campo, Chave, Confirmar, Folha, Segmentos, SeletorCategoria, SeletorConta } from './ui';
 
 type Repeticao = 'nao' | 'mensal' | 'parcelado';
@@ -31,6 +32,16 @@ export function FormLancamento({ tipoInicial, editar, aoFechar }: { tipoInicial:
   const [parcelas, setParcelas] = useState<{ data: string; valor: string }[]>([]);
   const [erros, setErros] = useState<Record<string, string>>({});
   const [confirmarExclusao, setConfirmarExclusao] = useState(false);
+  // Cartão de crédito: a compra entra numa fatura (por padrão, a calculada pela data e pelo fechamento).
+  const [faturaEscolhida, setFaturaEscolhida] = useState(editar?.fatura ?? '');
+  const contaSel = dados.contas.find((c) => c.id === contaId);
+  const noCartao = tipo !== 'transferencia' && ehCartao(contaSel);
+  const infoCartao = noCartao ? contaSel!.cartao! : null;
+  const faturaPadrao = infoCartao && data ? faturaDaCompra(data, infoCartao) : '';
+  const fatura = noCartao ? faturaEscolhida || faturaPadrao : '';
+  const opcoesFatura = faturaPadrao ? Array.from({ length: 15 }, (_, i) => somaMesesMes(faturaPadrao, i - 2)) : [];
+  if (fatura && !opcoesFatura.includes(fatura)) opcoesFatura.unshift(fatura);
+  const rotuloFatura = (f: string) => `Fatura de ${mesCurto(`${f}-01`)} · vence ${dataBR(vencimentoDaFatura(f, infoCartao!))}`;
 
   /** Monta (ou estica/encurta) a lista de parcelas, mantendo o que já foi digitado. */
   const montarParcelas = (qtd: number, lista = parcelas) => {
@@ -91,8 +102,11 @@ export function FormLancamento({ tipoInicial, editar, aoFechar }: { tipoInicial:
       criadoEm: editar?.criadoEm ?? hoje(),
       serieId: editar?.serieId,
       parcela: editar?.parcela,
+      fatura: noCartao ? fatura : undefined,
+      faturaAuto: editar?.faturaAuto,
     };
-    const status = pago ? 'pago' : 'previsto';
+    // Compra no cartão já aconteceu: fica "paga" no cartão. O dinheiro sai quando a fatura é paga.
+    const status = noCartao || pago ? 'pago' : 'previsto';
     if (editar) {
       despachar({ t: 'lancamento', lancamento: { ...baseL, id: editar.id, data, status } });
     } else if (repeticao === 'nao') {
@@ -100,13 +114,15 @@ export function FormLancamento({ tipoInicial, editar, aoFechar }: { tipoInicial:
     } else {
       const serieId = novoId();
       const lista: Lancamento[] = Array.from({ length: n }, (_, i) => {
-        const d = usarParcelas ? parcelas[i].data : somaMeses(data, i);
+        // No cartão, parcelas têm a data da compra e caem uma em cada fatura; "todo mês" repete a compra a cada mês.
+        const d = noCartao ? (repeticao === 'parcelado' ? data : somaMeses(data, i)) : usarParcelas ? parcelas[i].data : somaMeses(data, i);
         return {
           ...baseL,
           ...(usarParcelas ? { valor: valoresParcelas[i]! } : {}),
           id: novoId(),
           data: d,
-          status: i === 0 ? status : 'previsto',
+          status: noCartao ? 'pago' : i === 0 ? status : 'previsto',
+          fatura: noCartao ? somaMesesMes(fatura, i) : undefined,
           serieId,
           parcela: repeticao === 'parcelado' ? { n: i + 1, total: n } : undefined,
         };
@@ -142,7 +158,7 @@ export function FormLancamento({ tipoInicial, editar, aoFechar }: { tipoInicial:
           </Campo>
         )}
         <div className="grade-2">
-          <Campo rotulo={tipo === 'entrada' ? 'Data do recebimento' : tipo === 'saida' ? 'Data do pagamento' : 'Data'} id="f-data" erro={erros.data}>
+          <Campo rotulo={noCartao ? (tipo === 'entrada' ? 'Data do estorno' : 'Data da compra') : tipo === 'entrada' ? 'Data do recebimento' : tipo === 'saida' ? 'Data do pagamento' : 'Data'} id="f-data" erro={erros.data}>
             <input id="f-data" type="date" value={data} onChange={(e) => mudarData(e.target.value)} />
           </Campo>
           {tipo === 'transferencia' ? (
@@ -164,10 +180,18 @@ export function FormLancamento({ tipoInicial, editar, aoFechar }: { tipoInicial:
             <SeletorCategoria id="f-categoria" valor={categoriaId} aoMudar={setCategoriaId} categorias={dados.categorias} sentido={sentido} />
           </Campo>
         )}
-        <Chave id="f-pago" ligada={pago} aoMudar={(v) => { setPago(v); setMexeuPago(true); }}>
-          {tipo === 'entrada' ? 'Já foi recebido' : 'Já foi pago'}
-          <small>{pago ? 'Entra no saldo real agora.' : 'Fica como previsto: só aparece nos alertas e na projeção.'}</small>
-        </Chave>
+        {noCartao ? (
+          <Campo rotulo={repeticao === 'parcelado' ? 'Primeira parcela na fatura' : 'Entra na fatura'} id="f-fatura" ajuda={tipo === 'entrada' ? 'Estorno ou reembolso no cartão: diminui a fatura escolhida.' : 'O dinheiro só sai da sua conta quando você paga a fatura.'}>
+            <select id="f-fatura" value={fatura} onChange={(e) => setFaturaEscolhida(e.target.value === faturaPadrao ? '' : e.target.value)}>
+              {opcoesFatura.map((f) => <option key={f} value={f}>{rotuloFatura(f)}</option>)}
+            </select>
+          </Campo>
+        ) : (
+          <Chave id="f-pago" ligada={pago} aoMudar={(v) => { setPago(v); setMexeuPago(true); }}>
+            {tipo === 'entrada' ? 'Já foi recebido' : 'Já foi pago'}
+            <small>{pago ? 'Entra no saldo real agora.' : 'Fica como previsto: só aparece nos alertas e na projeção.'}</small>
+          </Chave>
+        )}
         {tipo === 'entrada' && (
           <div className="grade-2">
             <Campo rotulo="OS ou pedido (opcional)" id="f-doc" erro={erros.doc}>
@@ -204,7 +228,7 @@ export function FormLancamento({ tipoInicial, editar, aoFechar }: { tipoInicial:
                 <span>{repeticao === 'mensal' ? 'meses' : 'vezes'}</span>
               </div>
             )}
-            {repeticao === 'parcelado' && (
+            {repeticao === 'parcelado' && !noCartao && (
               <Chave id="f-ajustar" ligada={ajustar} aoMudar={ligarAjuste}>
                 Parcelas com valores ou datas diferentes
                 <small>{ajustar ? 'Digite o vencimento e o valor de cada parcela.' : 'Ligue se a nota não foi dividida em partes iguais ou não vence de 30 em 30 dias.'}</small>
@@ -223,7 +247,13 @@ export function FormLancamento({ tipoInicial, editar, aoFechar }: { tipoInicial:
                 {erros.parcelas && <p className="erro">{erros.parcelas}</p>}
               </div>
             )}
-            {erros.vezes ? <p className="erro">{erros.vezes}</p> : !(repeticao === 'parcelado' && ajustar) && ultimaData && (
+            {erros.vezes ? <p className="erro">{erros.vezes}</p> : noCartao && Number(vezes) >= 2 ? (
+              <p className="ajuda">
+                {repeticao === 'parcelado'
+                  ? <>Uma parcela em cada fatura, de {mesCurto(`${fatura}-01`)} a {mesCurto(`${somaMesesMes(fatura, Number(vezes) - 1)}-01`)}.{parseValor(valor) ? <> Total da compra: <strong>{brl(parseValor(valor)! * Number(vezes))}</strong>.</> : null}</>
+                  : <>A mesma compra entra em todas as faturas até {mesCurto(`${somaMesesMes(fatura, Number(vezes) - 1)}-01`)}.</>}
+              </p>
+            ) : !(repeticao === 'parcelado' && ajustar) && ultimaData && (
               <p className="ajuda">
                 {repeticao === 'parcelado' ? 'Cada parcela com o valor acima. ' : ''}A última fica para {dataBR(ultimaData)}. As seguintes entram como previstas.
               </p>

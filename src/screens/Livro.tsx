@@ -1,13 +1,13 @@
 import { comSubs, emArvore, nomeCategoria, rotuloDocumento } from '../lib/categorias';
 import { useMemo, useState } from 'react';
 import type { Lancamento } from '../types';
-import { useDados } from '../data/store';
-import { BLOCOS } from '../data/planos';
-import { brl, dataAmigavel, hoje, mesDe, nomeMes, somaMesesMes } from '../lib/format';
+import { useBlocos, useDados } from '../data/store';
+import { brl, dataAmigavel, hoje, mesCurto, mesDe, nomeMes, somaMesesMes } from '../lib/format';
 import { Icone, Valor } from '../components/ui';
 
 export function Livro({ editar, ir }: { editar: (l: Lancamento) => void; ir: (r: string) => void }) {
   const { dados } = useDados();
+  const blocos = useBlocos();
   const h = hoje();
   const [mes, setMes] = useState(mesDe(h));
   const [conta, setConta] = useState('');
@@ -73,7 +73,7 @@ export function Livro({ editar, ir }: { editar: (l: Lancamento) => void; ir: (r:
         </select>
         <select id="l-cat" value={categoria} onChange={(e) => setCategoria(e.target.value)} aria-label="Filtrar por categoria">
           <option value="">Todas as categorias</option>
-          {BLOCOS.map((b) => (
+          {blocos.map((b) => (
             <optgroup key={b.id} label={b.nome}>
               <option value={`bloco:${b.id}`}>Todo o bloco {b.nome}</option>
               {emArvore(dados.categorias.filter((c) => c.bloco === b.id), dados.categorias, categoria).map(({ c, nivel }) => <option key={c.id} value={c.id}>{nivel ? `\u00a0\u00a0\u00a0↳ ${c.nome}` : c.nome}</option>)}
@@ -110,6 +110,7 @@ export function Livro({ editar, ir }: { editar: (l: Lancamento) => void; ir: (r:
                       {l.descricao ? `${titulo(l)} · ` : ''}
                       {l.tipo !== 'transferencia' && (contas.get(l.contaId)?.nome ?? '—')}
                       {l.parcela && ` · ${l.parcela.n}/${l.parcela.total}`}
+                      {l.fatura && l.tipo !== 'transferencia' && ` · fatura ${mesCurto(`${l.fatura}-01`)}`}
                       {rotuloDocumento(l) && ` · ${rotuloDocumento(l)}`}
                     </span>
                   </button>

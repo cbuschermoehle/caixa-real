@@ -1,7 +1,7 @@
 import { emArvore } from '../lib/categorias';
 import { useEffect, useRef, type ReactNode } from 'react';
 import type { Categoria, Conta, Sentido } from '../types';
-import { BLOCOS } from '../data/planos';
+import { useBlocos } from '../data/store';
 import { brl } from '../lib/format';
 
 export function Folha({ titulo, aoFechar, children, tom }: { titulo: string; aoFechar: () => void; children: ReactNode; tom?: 'entrada' | 'saida' | 'transferencia' }) {
@@ -60,10 +60,11 @@ export function Campo({ rotulo, id, erro, ajuda, children }: { rotulo: string; i
 }
 
 export function SeletorCategoria({ id, valor, aoMudar, categorias, sentido }: { id: string; valor: string; aoMudar: (v: string) => void; categorias: Categoria[]; sentido: Sentido }) {
+  const blocos = useBlocos();
   return (
     <select id={id} value={valor} onChange={(e) => aoMudar(e.target.value)}>
       <option value="">Escolha a categoria</option>
-      {BLOCOS.map((b) => {
+      {blocos.map((b) => {
         const lista = emArvore(categorias.filter((c) => c.bloco === b.id && c.sentido === sentido), categorias, valor);
         if (!lista.length) return null;
         return (
@@ -136,6 +137,17 @@ export function Confirmar({ texto, rotuloOk, aoConfirmar, aoCancelar, perigo }: 
         <button type="button" className="btn" onClick={aoCancelar}>Cancelar</button>
         <button type="button" className={`btn ${perigo ? 'btn-perigo' : 'btn-primario'}`} onClick={aoConfirmar}>{rotuloOk}</button>
       </div>
+    </div>
+  );
+}
+
+/** Barra de % da renda comprometida, com cor por faixa (verde, amarelo, vermelho). */
+export function BarraComprometida({ pct, faixa }: { pct: number; faixa: 'ok' | 'atencao' | 'alto' }) {
+  return (
+    <div className={`barra-progresso faixa-${faixa}`} role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.min(100, pct)} aria-label="Renda comprometida">
+      <span style={{ width: `${Math.min(100, pct)}%` }} />
+      <i className="marca-50" aria-hidden="true" />
+      <i className="marca-70" aria-hidden="true" />
     </div>
   );
 }

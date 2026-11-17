@@ -1,6 +1,7 @@
 import { nomeCategoria, raiz } from './categorias';
 import type { Bloco, Categoria, Conta, Dados, Lancamento } from '../types';
-import { diasEntre, mesDe, somaDias, ultimoDiaDoMes } from './format';
+import { diasEntre, hoje, mesDe, somaDias, ultimoDiaDoMes } from './format';
+import { dataDeCaixa, ehCompraNoCartao } from './cartao';
 
 /**
  * Efeito de um lançamento no saldo de uma conta (em centavos).
@@ -26,22 +27,27 @@ export function saldoConta(dados: Dados, conta: Conta, ate: string): number {
   return s;
 }
 
-export const ehDisponivel = (c: Conta) => c.tipo !== 'aplicacao';
+/** Dinheiro que pode ser usado já: tudo menos aplicações e cartões de crédito (cartão é dívida, não dinheiro). */
+export const ehDisponivel = (c: Conta) => c.tipo !== 'aplicacao' && c.tipo !== 'cartao';
 
 export interface Saldos {
   porConta: { conta: Conta; saldo: number }[];
   disponivel: number;
   aplicado: number;
+  /** Disponível + aplicações (sem cartões). */
   total: number;
+  /** Soma dos saldos dos cartões (negativo = compras ainda não pagas). */
+  cartoes: number;
 }
 
 export function saldos(dados: Dados, ate: string): Saldos {
   const porConta = dados.contas
     .map((conta) => ({ conta, saldo: saldoConta(dados, conta, ate) }))
     .filter((x) => !x.conta.arquivada || x.saldo !== 0);
-  const disponivel = porConta.filter((x) => ehDisponivel(x.conta)).reduce((a, x) => a + x.saldo, 0);
-  const total = porConta.reduce((a, x) => a + x.saldo, 0);
-  return { porConta, disponivel, aplicado: total - disponivel, total };
+  const soma = (f: (c: Conta) => boolean) => porConta.filter((x) => f(x.conta)).reduce((a, x) => a + x.saldo, 0);
+  const disponivel = soma(ehDisponivel);
+  const aplicado = soma((c) => c.tipo === 'aplicacao');
+  return { porConta, disponivel, aplicado, total: disponivel + aplicado, cartoes: soma((c) => c.tipo === 'cartao') };
 }
 
 /** Efeito de um lançamento no conjunto de contas disponíveis (ignora a data do saldo inicial). */
@@ -124,16 +130,23 @@ export interface Cascata {
 /** Sinal do lançamento no relatório: entradas positivas, saídas negativas. */
 const sinal = (l: Lancamento) => (l.tipo === 'entrada' ? 1 : -1);
 
-export function cascata(dados: Dados, mes: string): Cascata {
+/**
+ * Relatório do mês. Compras no cartão entram no mês em que a fatura vence (regime de caixa) e só contam
+ * como realizadas depois do vencimento; antes disso aparecem como previstas.
+ */
+export function cascata(dados: Dados, mes: string, ref = hoje()): Cascata {
   const cats = new Map(dados.categorias.map((c) => [c.id, c]));
+  const contas = new Map(dados.contas.map((c) => [c.id, c]));
   const blocos = {} as Record<Bloco, TotalBloco>;
-  (['entradas', 'custos_variaveis', 'despesas_fixas', 'investimentos', 'outras'] as Bloco[]).forEach(
+  (['entradas', 'custos_variaveis', 'despesas_fixas', 'dividas', 'investimentos', 'outras'] as Bloco[]).forEach(
     (b) => (blocos[b] = { bloco: b, realizado: 0, previsto: 0, linhas: [] }),
   );
   const linhas = new Map<string, LinhaCategoria>();
   const subLinhas = new Map<string, LinhaCategoria>();
   for (const l of dados.lancamentos) {
-    if (l.tipo === 'transferencia' || mesDe(l.data) !== mes || !l.categoriaId) continue;
+    if (l.tipo === 'transferencia' || !l.categoriaId) continue;
+    const quando = dataDeCaixa(l, contas);
+    if (mesDe(quando) !== mes) continue;
     const propria = cats.get(l.categoriaId);
     if (!propria) continue;
     // Subcategoria soma dentro da categoria mãe.
@@ -152,7 +165,8 @@ export function cascata(dados: Dados, mes: string): Cascata {
       subLinhas.set(propria.id, sub);
       linha.subs!.push(sub);
     }
-    const k = l.status === 'pago' ? 'realizado' : 'previsto';
+    const realizado = l.status === 'pago' && (!ehCompraNoCartao(l, contas) || quando <= ref);
+    const k = realizado ? 'realizado' : 'previsto';
     linha[k] += v;
     sub[k] += v;
     blocos[cat.bloco][k] += v;
@@ -165,7 +179,8 @@ export function cascata(dados: Dados, mes: string): Cascata {
   Object.values(blocos).forEach((b) => b.linhas.sort((a, z) => a.categoria.ordem - z.categoria.ordem));
   const r = (k: 'realizado' | 'previsto') => {
     const margem = blocos.entradas[k] - blocos.custos_variaveis[k];
-    const operacional = margem - blocos.despesas_fixas[k];
+    // No perfil pessoal, "operacional" é o "Quanto sobrou" (renda menos gastos e dívidas).
+    const operacional = margem - blocos.despesas_fixas[k] - blocos.dividas[k];
     const aposInvestimentos = operacional - blocos.investimentos[k];
     const variacao = aposInvestimentos + blocos.outras[k];
     return { margem, operacional, aposInvestimentos, variacao };
@@ -182,21 +197,39 @@ export function cascata(dados: Dados, mes: string): Cascata {
 }
 
 /**
+ * Perfil pessoal: quanto da renda do mês já está preso em gastos essenciais e dívidas (pagos + previstos).
+ * Faixas de referência: até 50% tranquilo, até 70% atenção, acima disso apertado.
+ */
+export function rendaComprometida(c: Cascata) {
+  const soma = (b: Bloco) => c.blocos[b].realizado + c.blocos[b].previsto;
+  const renda = soma('entradas');
+  const essenciais = soma('despesas_fixas');
+  const dividas = soma('dividas');
+  const comprometido = essenciais + dividas;
+  const pct = renda > 0 ? Math.round((comprometido / renda) * 100) : null;
+  const faixa: 'ok' | 'atencao' | 'alto' | null = pct === null ? null : pct <= 50 ? 'ok' : pct <= 70 ? 'atencao' : 'alto';
+  return { renda, essenciais, dividas, comprometido, pct, faixa };
+}
+
+/**
  * Ponto de equilíbrio do mês: primeiro dia em que a margem de contribuição acumulada
  * (entradas pagas menos custos variáveis pagos) cobre as despesas fixas do mês (pagas + previstas).
  */
-export function pontoEquilibrio(dados: Dados, mes: string) {
+export function pontoEquilibrio(dados: Dados, mes: string, ref = hoje()) {
   const cats = new Map(dados.categorias.map((c) => [c.id, c]));
+  const contas = new Map(dados.contas.map((c) => [c.id, c]));
   let fixas = 0;
   const margemDia = new Map<string, number>();
   for (const l of dados.lancamentos) {
-    if (l.tipo === 'transferencia' || mesDe(l.data) !== mes || !l.categoriaId) continue;
+    if (l.tipo === 'transferencia' || !l.categoriaId) continue;
+    const quando = dataDeCaixa(l, contas);
+    if (mesDe(quando) !== mes) continue;
     const cat = cats.get(l.categoriaId);
     if (!cat) continue;
     if (cat.bloco === 'despesas_fixas') fixas += l.valor;
-    if (l.status !== 'pago') continue;
-    if (cat.bloco === 'entradas') margemDia.set(l.data, (margemDia.get(l.data) ?? 0) + l.valor);
-    if (cat.bloco === 'custos_variaveis') margemDia.set(l.data, (margemDia.get(l.data) ?? 0) - l.valor);
+    if (l.status !== 'pago' || quando > ref) continue;
+    if (cat.bloco === 'entradas') margemDia.set(quando, (margemDia.get(quando) ?? 0) + l.valor);
+    if (cat.bloco === 'custos_variaveis') margemDia.set(quando, (margemDia.get(quando) ?? 0) - l.valor);
   }
   const fim = ultimoDiaDoMes(mes);
   let acumulada = 0;
@@ -211,14 +244,17 @@ export function pontoEquilibrio(dados: Dados, mes: string) {
 // ---------- Painel ----------
 
 /** Entradas e saídas pagas por dia (sem transferências). */
-export function entradasSaidasPorDia(dados: Dados, inicio: string, fim: string) {
+export function entradasSaidasPorDia(dados: Dados, inicio: string, fim: string, ref = hoje()) {
+  const contas = new Map(dados.contas.map((c) => [c.id, c]));
   const mapa = new Map<string, { e: number; s: number }>();
   for (const l of dados.lancamentos) {
-    if (l.status !== 'pago' || l.tipo === 'transferencia' || l.data < inicio || l.data > fim) continue;
-    const reg = mapa.get(l.data) ?? { e: 0, s: 0 };
+    if (l.status !== 'pago' || l.tipo === 'transferencia') continue;
+    const quando = dataDeCaixa(l, contas);
+    if (quando < inicio || quando > fim || quando > ref) continue;
+    const reg = mapa.get(quando) ?? { e: 0, s: 0 };
     if (l.tipo === 'entrada') reg.e += l.valor;
     else reg.s += l.valor;
-    mapa.set(l.data, reg);
+    mapa.set(quando, reg);
   }
   const dias: { data: string; entradas: number; saidas: number }[] = [];
   for (let d = inicio; d <= fim; d = somaDias(d, 1)) {
@@ -255,7 +291,7 @@ export function totaisPrevistos(lista: Lancamento[]) {
   let pagar = 0;
   for (const l of lista) {
     if (l.tipo === 'entrada') receber += l.valor;
-    else if (l.tipo === 'saida') pagar += l.valor;
+    else if (l.tipo === 'saida' || l.fatura) pagar += l.valor; // fatura do cartão é conta a pagar
   }
   return { receber, pagar, diferenca: receber - pagar };
 }
@@ -263,7 +299,8 @@ export function totaisPrevistos(lista: Lancamento[]) {
 export const diasDeAtraso = (l: Lancamento, ref: string) => Math.max(0, diasEntre(l.data, ref));
 
 /** Entradas e saídas pagas por mês, nos `n` meses terminando em `fimMes` (AAAA-MM). */
-export function porMes(dados: Dados, fimMes: string, n: number) {
+export function porMes(dados: Dados, fimMes: string, n: number, ref = hoje()) {
+  const contas = new Map(dados.contas.map((c) => [c.id, c]));
   const meses: { data: string; entradas: number; saidas: number }[] = [];
   const idx = new Map<string, number>();
   for (let i = n - 1; i >= 0; i--) {
@@ -275,7 +312,9 @@ export function porMes(dados: Dados, fimMes: string, n: number) {
   }
   for (const l of dados.lancamentos) {
     if (l.status !== 'pago' || l.tipo === 'transferencia') continue;
-    const i = idx.get(mesDe(l.data));
+    const quando = dataDeCaixa(l, contas);
+    if (quando > ref) continue;
+    const i = idx.get(mesDe(quando));
     if (i === undefined) continue;
     if (l.tipo === 'entrada') meses[i].entradas += l.valor;
     else meses[i].saidas += l.valor;
@@ -305,7 +344,8 @@ export function longoPrazo(dados: Dados, ref: string) {
   const anos = new Map<number, { receber: number; pagar: number }>();
   const series = new Map<string, Lancamento[]>();
   for (const l of dados.lancamentos) {
-    if (l.status !== 'previsto' || l.tipo === 'transferencia') continue;
+    // Pagamento de fatura do cartão conta como conta a pagar; outras transferências, não.
+    if (l.status !== 'previsto' || (l.tipo === 'transferencia' && !l.fatura)) continue;
     const ano = Math.max(Number(l.data.slice(0, 4)), Number(ref.slice(0, 4)));
     const reg = anos.get(ano) ?? { receber: 0, pagar: 0 };
     if (l.tipo === 'entrada') reg.receber += l.valor;

@@ -10,6 +10,7 @@ import { Livro } from './screens/Livro';
 import { Relatorio } from './screens/Relatorio';
 import { Ajustes } from './screens/Ajustes';
 import { Extrato } from './screens/Extrato';
+import { TrocaPerfil } from './components/Perfis';
 
 const ROTAS = [
   { id: 'painel', nome: 'Painel', icone: 'painel' },
@@ -58,11 +59,7 @@ export function App() {
     <div className="app">
       <header className="barra-topo">
         <div className="barra-topo-in">
-          <div className="marca">
-            <span className="logo" aria-hidden="true">R$</span>
-            <span className="marca-nome">{dados.empresa.nome}</span>
-            {dados.empresa.exemplo && <span className="selo selo-exemplo">Exemplo</span>}
-          </div>
+          <TrocaPerfil aoTrocar={() => ir('painel')} />
           <nav className="nav-larga" aria-label="Seções">
             {ROTAS.map((r) => (
               <a key={r.id} href={`#${r.id}`} aria-current={rota === r.id ? 'page' : undefined} onClick={(e) => { e.preventDefault(); ir(r.id); }}>{r.nome}</a>

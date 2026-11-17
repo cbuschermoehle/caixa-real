@@ -6,7 +6,7 @@ import type { Dados } from '../types';
 
 /** Botão que lê um arquivo de cópia de segurança e substitui os dados atuais (com confirmação). */
 export function RestaurarCopia({ rotulo = 'Restaurar uma cópia de segurança', confirmar = true }: { rotulo?: string; confirmar?: boolean }) {
-  const { despachar } = useDados();
+  const { dados, despachar } = useDados();
   const entrada = useRef<HTMLInputElement>(null);
   const [lida, setLida] = useState<Dados | null>(null);
   const [erro, setErro] = useState('');
@@ -27,7 +27,9 @@ export function RestaurarCopia({ rotulo = 'Restaurar uma cópia de segurança', 
       {lida ? (
         <Confirmar
           perigo
-          texto={<>Trocar os dados atuais pela cópia de <strong>{lida.empresa?.nome ?? 'empresa sem nome'}</strong> ({lida.lancamentos.length} lançamentos)? O que está aqui agora será substituído.</>}
+          texto={lida.outrosPerfis?.length
+            ? <>Esta cópia tem {lida.outrosPerfis.length + 1} perfis (<strong>{[lida, ...lida.outrosPerfis].map((p) => p.empresa?.nome).join(', ')}</strong>). Trocar todos os perfis daqui por ela? O que está aqui agora será substituído.</>
+            : <>Trocar os dados de <strong>{dados.empresa?.nome ?? 'este perfil'}</strong> pela cópia de <strong>{lida.empresa?.nome ?? 'perfil sem nome'}</strong> ({lida.lancamentos.length} lançamentos)? O que está aqui agora será substituído.</>}
           rotuloOk="Restaurar"
           aoCancelar={() => setLida(null)}
           aoConfirmar={() => {
@@ -44,11 +46,11 @@ export function RestaurarCopia({ rotulo = 'Restaurar uma cópia de segurança', 
 }
 
 export function BaixarCopia() {
-  const { dados } = useDados();
+  const { guardado } = useDados();
   const [erro, setErro] = useState('');
   return (
     <div className="copia">
-      <button type="button" className="btn" onClick={async () => setErro((await baixarCopia(dados)) ?? '')}>Baixar cópia de segurança</button>
+      <button type="button" className="btn" onClick={async () => setErro((await baixarCopia(guardado)) ?? '')}>Baixar cópia de segurança</button>
       {erro && <p className="erro">{erro}</p>}
     </div>
   );

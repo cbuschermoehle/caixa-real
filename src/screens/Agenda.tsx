@@ -32,7 +32,9 @@ export function Agenda({ baixa, editar }: { baixa: (l: Lancamento) => void; edit
   const grupos = new Map<string, Lancamento[]>();
   lista.forEach((l) => grupos.set(l.data, [...(grupos.get(l.data) ?? []), l]));
   const nomeCat = (l: Lancamento) =>
-    l.tipo === 'transferencia'
+    l.tipo === 'transferencia' && l.fatura
+      ? `Fatura do cartão ${dados.contas.find((c) => c.id === l.contaDestinoId)?.nome ?? ''}`.trim()
+      : l.tipo === 'transferencia'
       ? `Transferência para ${dados.contas.find((c) => c.id === l.contaDestinoId)?.nome ?? '—'}`
       : nomeCategoria(l.categoriaId, dados.categorias) || 'Sem categoria';
   const nomeConta = (id: string) => dados.contas.find((c) => c.id === id)?.nome ?? '—';
@@ -107,9 +109,9 @@ export function Agenda({ baixa, editar }: { baixa: (l: Lancamento) => void; edit
                   {l.tipo === 'entrada' && l.documento && !l.nf && (
                     <button type="button" className="btn btn-link btn-nf" onClick={() => setConverter(l)}>Converter em NF</button>
                   )}
-                  <Valor v={l.tipo === 'entrada' ? l.valor : l.tipo === 'saida' ? -l.valor : 0} sinal classe="lanc-valor" />
+                  <Valor v={l.tipo === 'entrada' ? l.valor : l.tipo === 'saida' || l.fatura ? -l.valor : 0} sinal classe="lanc-valor" />
                   <button type="button" className={`btn btn-baixa btn-baixa-${l.tipo}`} onClick={() => baixa(l)}>
-                    {l.tipo === 'entrada' ? 'Recebi' : l.tipo === 'saida' ? 'Paguei' : 'Feito'}
+                    {l.tipo === 'entrada' ? 'Recebi' : l.tipo === 'saida' || l.fatura ? 'Paguei' : 'Feito'}
                   </button>
                 </li>
               ))}

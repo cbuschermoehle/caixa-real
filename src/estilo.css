@@ -607,3 +607,7 @@ input:focus, select:focus { border-color: var(--acento); outline: 2px solid colo
 @media (max-width: 520px) {
   .botoes-aviso { justify-content: flex-start; }
 }
+
+/* ---------- Ocultar valores ---------- */
+.btn-olho { flex: none; }
+.btn-olho[aria-pressed='true'] { color: var(--acento); background: var(--acento-suave); }

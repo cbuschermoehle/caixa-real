@@ -15,6 +15,7 @@ import { Patrimonio } from './screens/Patrimonio';
 import { FormRapido, ListaPendentes } from './components/Rapido';
 import { ehPessoal } from './data/planos';
 import { TrocaPerfil } from './components/Perfis';
+import { definirOcultar, lerOcultar } from './lib/format';
 
 const ROTAS = [
   { id: 'painel', nome: 'Painel', icone: 'painel' },
@@ -40,6 +41,13 @@ export function App() {
   const [rapido, setRapido] = useState(false);
   const [verPendentes, setVerPendentes] = useState(false);
   const [baixa, setBaixa] = useState<Lancamento | null>(null);
+  const [ocultar, setOcultar] = useState(lerOcultar);
+  // Vale para tudo que é desenhado abaixo (brl() consulta isto); a escolha fica guardada no aparelho.
+  definirOcultar(ocultar);
+  const trocarOcultar = () => {
+    definirOcultar(!ocultar, true);
+    setOcultar(!ocultar);
+  };
 
   useEffect(() => {
     const f = () => setRota(rotaDoHash());
@@ -78,6 +86,9 @@ export function App() {
               <a key={r.id} href={`#${r.id}`} aria-current={rotaAtual === r.id || (rotaAtual === 'extrato' && r.id === 'lancamentos' && ehPessoal(dados.empresa)) ? 'page' : undefined} onClick={(e) => { e.preventDefault(); ir(r.id); }}>{r.nome}</a>
             ))}
           </nav>
+          <button type="button" className="btn-icone btn-olho" onClick={trocarOcultar} aria-pressed={ocultar} aria-label={ocultar ? 'Mostrar valores' : 'Ocultar valores'} title={ocultar ? 'Mostrar valores' : 'Ocultar valores'}>
+            <Icone nome={ocultar ? 'olhoFechado' : 'olho'} tamanho={22} />
+          </button>
           <button type="button" className="btn btn-primario so-largo" onClick={() => novo('entrada')}><Icone nome="mais" tamanho={18} /> Lançar</button>
         </div>
       </header>

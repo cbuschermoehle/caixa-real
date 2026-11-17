@@ -483,3 +483,4 @@ input:focus, select:focus { border-color: var(--acento); outline: 2px solid colo
 .linha-doc { display: flex; gap: 6px; } .linha-doc select { flex: 0 0 auto; width: auto; } .linha-doc input { flex: 1; min-width: 0; }
 .btn-nf { white-space: nowrap; font-size: 0.85rem; padding-inline: 6px; }
 @media (max-width: 600px) { .lista-lanc li:has(.btn-nf) { flex-wrap: wrap; } .btn-nf { order: 5; flex-basis: 100%; text-align: left; justify-content: flex-start; padding: 4px 0 0; } }
+.grupo-dia h3 { font-size: 0.98rem; font-weight: 800; color: var(--tinta); letter-spacing: 0.03em; padding: 4px 0 4px 10px; border-left: 4px solid var(--acento); margin-top: 8px; }

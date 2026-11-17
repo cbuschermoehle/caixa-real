@@ -1,11 +1,42 @@
 const fmtBRL = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
 const fmtNum = new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-export const brl = (centavos: number) => fmtBRL.format(centavos / 100);
-export const num = (centavos: number) => fmtNum.format(centavos / 100);
+/*
+ * Ocultar valores (botão de olho no topo): as telas mostram "R$ •••••" no lugar dos valores.
+ * Fica guardado só neste aparelho. O PDF de fechamento sempre usa os valores reais (brlReal).
+ */
+let ocultos = false;
+const CHAVE_OCULTAR = 'caixa-real:ocultar';
+const MASCARA = 'R$ •••••';
+
+export function valoresOcultos(): boolean {
+  return ocultos;
+}
+export function lerOcultar(): boolean {
+  try {
+    return localStorage.getItem(CHAVE_OCULTAR) === '1';
+  } catch {
+    return false;
+  }
+}
+export function definirOcultar(v: boolean, guardar = false) {
+  ocultos = v;
+  if (!guardar) return;
+  try {
+    if (v) localStorage.setItem(CHAVE_OCULTAR, '1');
+    else localStorage.removeItem(CHAVE_OCULTAR);
+  } catch {
+    /* sem armazenamento: vale só até fechar */
+  }
+}
+
+export const brlReal = (centavos: number) => fmtBRL.format(centavos / 100);
+export const brl = (centavos: number) => (ocultos ? MASCARA : brlReal(centavos));
+export const num = (centavos: number) => (ocultos ? '•••••' : fmtNum.format(centavos / 100));
 
 /** Formato curto para eixos de gráfico: 12,3 mil, 1,2 mi. */
 export function brlCurto(centavos: number): string {
+  if (ocultos) return centavos === 0 ? '0' : '•••';
   const v = centavos / 100;
   const a = Math.abs(v);
   if (a >= 1_000_000) return `${(v / 1_000_000).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} mi`;

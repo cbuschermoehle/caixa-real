@@ -5,7 +5,7 @@ import { blocosDe, ehPessoal, linhasDoRelatorio } from '../data/planos';
 import { dataDeCaixa } from '../lib/cartao';
 import { cascata, saldoConta, saldos, type LinhaCategoria } from '../lib/calc';
 import { nomeCategoria, raiz, rotuloDocumento } from '../lib/categorias';
-import { brl, dataBR, hoje, mesDe, nomeMes, somaDias, somaMesesMes } from '../lib/format';
+import { brlReal as brl, dataBR, hoje, mesDe, nomeMes, somaDias, somaMesesMes } from '../lib/format';
 
 /*
  * Relatório de fechamento do mês, só para impressão.

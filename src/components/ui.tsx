@@ -110,6 +110,7 @@ const CAMINHOS: Record<string, string> = {
   seta: 'M9 6l6 6-6 6',
   futuro: 'M4 19h16M4 15l5-5 4 3 7-7M15 6h5v5',
   raio: 'M13 3L5 14h6l-1 7 8-11h-6l1-7z',
+  patrimonio: 'M3 10l9-6 9 6M5 10v9h14v-9M10 19v-5h4v5',
   voltar: 'M15 6l-6 6 6 6',
   check: 'M5 12l5 5 9-10',
   dividir: 'M12 3v6M12 9l-6 6v6M12 9l6 6v6',

@@ -1,4 +1,4 @@
-import type { Categoria, Conta, Dados, Empresa, Lancamento } from '../types';
+import type { Avaliacao, Bem, Categoria, Conta, Dados, Empresa, Lancamento, TipoInvestimento } from '../types';
 import { hoje, isoDe, novoId, somaDias, somaMeses, somaMesesMes } from '../lib/format';
 import { faturaDaCompra, sincronizarFaturas } from '../lib/cartao';
 import { planoDoRamo, planoPessoal } from './planos';
@@ -148,6 +148,7 @@ export function dadosPessoaisDeExemplo(ref = hoje()) {
     if (dia === 5) add('entrada', d, 900_000, 'Pró-labore', 'Pró-labore');
     if (dia === 15) add('entrada', d, 450_000, 'Distribuição de lucros', 'Lucros da empresa');
     if (dia === 6) add('saida', d, 150_000, 'Fundos imobiliários (FIIs)', 'Aporte mensal');
+    if (dia === 16 && d <= ref) add('entrada', d, entre(380, 460), 'Dividendos e rendimentos', 'Dividendos dos FIIs', inv.id);
     if (dia === 8) add('saida', d, 140_000, 'Escola e cursos', 'Mensalidade escolar');
     if (dia === 10) add('saida', d, 85_000, 'Condomínio', 'Condomínio');
     if (dia === 12) add('saida', d, entre(260, 380), 'Energia', 'Conta de luz');
@@ -184,5 +185,17 @@ export function dadosPessoaisDeExemplo(ref = hoje()) {
     { id: novoId(), valor: 4_750, data: ref, descricao: 'padaria', criadoEm: ref },
     { id: novoId(), valor: 18_740, data: somaDias(ref, -1), descricao: 'mercado', criadoEm: ref },
   ];
-  return { empresa, contas, categorias, lancamentos, pendentes, geradoEm: isoDe(new Date()) };
+  // Investimentos: valores digitados à mão em três datas; bens com valor inventado.
+  const avaliar = (data: string, v: Partial<Record<TipoInvestimento, number>>): Avaliacao[] =>
+    Object.entries(v).map(([tipo, valor]) => ({ id: novoId(), contaId: inv.id, tipo: tipo as TipoInvestimento, data, valor: valor! * 100 }));
+  const avaliacoes = [
+    ...avaliar(inicio, { acoes: 18_000, fiis: 26_000, etfs: 6_000, cripto: 4_000, exterior: 8_000 }),
+    ...avaliar(somaDias(ref, -40), { acoes: 17_400, fiis: 27_600, etfs: 6_100, cripto: 4_600, exterior: 8_300 }),
+    ...avaliar(somaDias(ref, -2), { acoes: 18_900, fiis: 29_300, etfs: 6_300, cripto: 3_900, exterior: 8_800 }),
+  ];
+  const bens: Bem[] = [
+    { id: novoId(), nome: 'Apartamento', tipo: 'imovel', valores: [{ data: inicio, valor: 62_000_000 }] },
+    { id: novoId(), nome: 'Carro', tipo: 'veiculo', valores: [{ data: inicio, valor: 10_150_000 }, { data: somaDias(ref, -5), valor: 9_800_000 }] },
+  ];
+  return { empresa, contas, categorias, lancamentos, pendentes, avaliacoes, bens, geradoEm: isoDe(new Date()) };
 }

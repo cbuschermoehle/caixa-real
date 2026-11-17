@@ -93,7 +93,7 @@ export function BarrasEntradaSaida({ dados, rotuloEixo, rotulos = ROTULOS_PADRAO
   );
 }
 
-export function LinhaSaldo({ pontos, destaque }: { pontos: { data: string; saldo: number }[]; destaque?: string | null }) {
+export function LinhaSaldo({ pontos, destaque, nome = 'Saldo projetado', eixo = dataEixo, dica = 'Passe o dedo no gráfico para ver cada dia' }: { pontos: { data: string; saldo: number }[]; destaque?: string | null; nome?: string; eixo?: (data: string) => string; dica?: string }) {
   const [foco, setFoco] = useState<number | null>(null);
   const [ref, L] = useLargura();
   const vals = pontos.map((p) => p.saldo);
@@ -120,7 +120,7 @@ export function LinhaSaldo({ pontos, destaque }: { pontos: { data: string; saldo
   };
   return (
     <figure className="grafico" ref={ref}>
-      <svg viewBox={`0 0 ${L} ${A}`} role="img" aria-label="Saldo projetado por dia" onMouseMove={mover} onTouchMove={mover} onMouseLeave={() => setFoco(null)}>
+      <svg viewBox={`0 0 ${L} ${A}`} role="img" aria-label={nome} onMouseMove={mover} onTouchMove={mover} onMouseLeave={() => setFoco(null)}>
         {ys.map((v) => (
           <g key={v}>
             <line x1={M.l} x2={L - M.r} y1={y(v)} y2={y(v)} className={v === 0 ? 'grade-zero' : 'grade'} />
@@ -131,16 +131,16 @@ export function LinhaSaldo({ pontos, destaque }: { pontos: { data: string; saldo
         <path d={linha} className="linha-saldo" fill="none" />
         {pontos.map((p, i) =>
           i % cada === 0 || i === ultimo ? (
-            <text key={p.data} x={Math.min(L - M.r - 14, Math.max(M.l + 14, x(i)))} y={A - 8} textAnchor="middle" className="eixo">{dataEixo(p.data)}</text>
+            <text key={p.data} x={Math.min(L - M.r - 14, Math.max(M.l + 14, x(i)))} y={A - 8} textAnchor="middle" className="eixo">{eixo(p.data)}</text>
           ) : null,
         )}
         {iDestaque >= 0 && <circle cx={x(iDestaque)} cy={y(pontos[iDestaque].saldo)} r="5" className="ponto-alerta" />}
         <circle cx={x(foco ?? ultimo)} cy={y(f.saldo)} r="4.5" className="ponto-saldo" />
       </svg>
       <figcaption className="legenda">
-        <strong>{dataEixo(f.data)}</strong>
-        <span className={f.saldo < 0 ? 'neg' : ''}>Saldo projetado {brl(f.saldo)}</span>
-        {foco === null && <span className="ajuda">Passe o dedo no gráfico para ver cada dia</span>}
+        <strong>{eixo(f.data)}</strong>
+        <span className={f.saldo < 0 ? 'neg' : ''}>{nome} {brl(f.saldo)}</span>
+        {foco === null && <span className="ajuda">{dica}</span>}
       </figcaption>
     </figure>
   );

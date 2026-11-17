@@ -70,6 +70,29 @@ export interface Pendente {
   criadoEm: string;
 }
 
+/** Tipos de investimento no modo simples (sem ativo por ativo). */
+export type TipoInvestimento = 'acoes' | 'fiis' | 'etfs' | 'cripto' | 'exterior' | 'renda_fixa' | 'previdencia';
+
+/** Quanto valia um tipo de investimento numa corretora/carteira numa data (digitado à mão). */
+export interface Avaliacao {
+  id: string;
+  contaId: string;
+  tipo: TipoInvestimento;
+  data: string;
+  valor: number;
+}
+
+export type TipoBem = 'imovel' | 'veiculo' | 'outro';
+
+/** Bem do patrimônio (casa, carro...). Não é dinheiro: não mexe em saldo nenhum. */
+export interface Bem {
+  id: string;
+  nome: string;
+  tipo: TipoBem;
+  /** Valores informados ao longo do tempo, do mais antigo para o mais novo. */
+  valores: { data: string; valor: number }[];
+}
+
 /** Documento de origem de uma conta a receber (OS ou pedido), antes de virar nota fiscal. */
 export interface Documento {
   tipo: 'os' | 'pedido';
@@ -166,4 +189,8 @@ export interface Dados {
   outrosPerfis?: Dados[];
   /** Lançamentos rápidos ainda não completados. Não mexem no saldo. */
   pendentes?: Pendente[];
+  /** Valor atual dos investimentos, por corretora e tipo (histórico). */
+  avaliacoes?: Avaliacao[];
+  /** Bens do patrimônio. */
+  bens?: Bem[];
 }

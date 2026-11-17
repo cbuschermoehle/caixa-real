@@ -109,3 +109,24 @@ describe('baixa manual pelo extrato', () => {
     expect(r.lancamento.nf).toBe('12');
   });
 });
+
+import { reducer } from '../data/store';
+describe('desfazer importação', () => {
+  it('apaga linhas e lançamentos do arquivo e devolve previstos', () => {
+    const d = base();
+    const prev = l({ id: 'prev', status: 'previsto', valor: 500, categoriaId: cat(d, 'Energia').id });
+    d.lancamentos.push(prev, l({ id: 'outro', valor: 100, categoriaId: cat(d, 'Energia').id }));
+    d.importacoes = [{ id: 'imp', contaId: 'pj', arquivo: 'a.ofx', em: '2026-11-17', novas: 2, bloqueadas: 0 }];
+    d.extrato = [
+      { id: 't1', contaId: 'pj', importacaoId: 'imp', chave: 'k1', data: '2026-11-10', descricao: 'X', valor: -200, situacao: 'confirmada' },
+      { id: 't2', contaId: 'pj', importacaoId: 'imp', chave: 'k2', data: '2026-11-11', descricao: 'Y', valor: -500, situacao: 'confirmada' },
+    ];
+    d.lancamentos.push(l({ id: 'novo', valor: 200, origem: 'extrato', extratoId: 't1', categoriaId: cat(d, 'Energia').id }));
+    d.lancamentos = d.lancamentos.map((x) => (x.id === 'prev' ? { ...x, status: 'pago', extratoId: 't2' } : x));
+    const r = reducer(d, { t: 'desfazerImportacao', id: 'imp' });
+    expect(r.extrato).toEqual([]);
+    expect(r.importacoes).toEqual([]);
+    expect(r.lancamentos.map((x) => x.id).sort()).toEqual(['outro', 'prev']);
+    expect(r.lancamentos.find((x) => x.id === 'prev')).toMatchObject({ status: 'previsto', extratoId: undefined });
+  });
+});

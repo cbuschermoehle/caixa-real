@@ -22,6 +22,7 @@ export type Acao =
   | { t: 'excluir'; ids: string[] }
   | { t: 'importar'; importacao: Importacao; transacoes: TransacaoExtrato[]; modelo?: ModeloColunas }
   | { t: 'conciliar'; itens: { transacao: TransacaoExtrato; lancamento?: Lancamento; extras?: Lancamento[] }[]; regras?: Regra[] }
+  | { t: 'desfazerImportacao'; id: string }
   | { t: 'regra'; regra: Regra }
   | { t: 'excluirRegra'; id: string }
   | { t: 'restaurar'; dados: Dados }
@@ -77,6 +78,19 @@ export function reducer(d: Dados, a: Acao): Dados {
       let regras = d.regras ?? [];
       for (const r of a.regras ?? []) regras = upsert(regras, r);
       return { ...d, extrato, lancamentos, regras };
+    }
+    case 'desfazerImportacao': {
+      // Tira as linhas do arquivo e o que foi lançado a partir delas. Previstos que tinham sido baixados voltam a ser previstos.
+      const linhas = new Set((d.extrato ?? []).filter((t) => t.importacaoId === a.id).map((t) => t.id));
+      const lancamentos = d.lancamentos
+        .filter((l) => !(l.extratoId && linhas.has(l.extratoId) && l.origem === 'extrato'))
+        .map((l) => (l.extratoId && linhas.has(l.extratoId) ? { ...l, status: 'previsto' as const, extratoId: undefined } : l));
+      return {
+        ...d,
+        lancamentos,
+        extrato: (d.extrato ?? []).filter((t) => t.importacaoId !== a.id),
+        importacoes: (d.importacoes ?? []).filter((i) => i.id !== a.id),
+      };
     }
     case 'regra':
       return { ...d, regras: upsert(d.regras ?? [], a.regra) };

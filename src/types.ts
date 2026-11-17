@@ -1,12 +1,16 @@
 // Valores em centavos (inteiros). Datas como 'AAAA-MM-DD' no fuso local.
 
-export type Ramo = 'comercio' | 'servicos' | 'alimentacao' | 'construcao' | 'industria';
+export type Ramo = 'comercio' | 'servicos' | 'alimentacao' | 'construcao' | 'industria' | 'pessoal';
 
-export type Bloco = 'entradas' | 'custos_variaveis' | 'despesas_fixas' | 'investimentos' | 'outras';
+/** Perfil de empresa (padrão) ou de finanças pessoais/da casa. */
+export type TipoPerfil = 'empresa' | 'pessoal';
+
+/** No perfil pessoal os mesmos blocos ganham outros nomes; 'dividas' só existe no pessoal. */
+export type Bloco = 'entradas' | 'custos_variaveis' | 'despesas_fixas' | 'dividas' | 'investimentos' | 'outras';
 
 export type Sentido = 'entrada' | 'saida';
 
-export type TipoConta = 'corrente' | 'caixa' | 'maquininha' | 'aplicacao';
+export type TipoConta = 'corrente' | 'caixa' | 'maquininha' | 'aplicacao' | 'cartao';
 
 export type TipoLancamento = 'entrada' | 'saida' | 'transferencia';
 
@@ -18,6 +22,17 @@ export interface Empresa {
   ramo: Ramo;
   criadaEm: string;
   exemplo?: boolean;
+  /** Ausente = empresa (dados criados antes dos perfis). */
+  tipo?: TipoPerfil;
+}
+
+/** Dados do cartão de crédito (dias de 1 a 31). */
+export interface InfoCartao {
+  fechamento: number;
+  vencimento: number;
+  limite?: number;
+  /** Conta de onde sai o pagamento da fatura. */
+  contaPagamentoId?: string;
 }
 
 export interface Conta {
@@ -28,6 +43,8 @@ export interface Conta {
   /** Data em que o saldo inicial vale. Só lançamentos a partir dela mexem no saldo. */
   dataSaldoInicial: string;
   arquivada: boolean;
+  /** Só em contas do tipo cartão de crédito. */
+  cartao?: InfoCartao;
 }
 
 export interface Categoria {
@@ -70,6 +87,13 @@ export interface Lancamento {
   documento?: Documento;
   /** Número da nota fiscal (numeração própria, diferente da OS/pedido). */
   nf?: string;
+  /**
+   * Cartão de crédito: mês (AAAA-MM) em que vence a fatura desta compra.
+   * Em pagamentos de fatura (transferência para o cartão), a fatura que está sendo paga.
+   */
+  fatura?: string;
+  /** Pagamento de fatura previsto criado e atualizado sozinho pelo app. */
+  faturaAuto?: boolean;
 }
 
 export type SituacaoExtrato = 'pendente' | 'confirmada' | 'ignorada';
@@ -124,4 +148,9 @@ export interface Dados {
   modelos?: ModeloColunas[];
   /** Versão do plano de contas padrão já aplicada (para incluir categorias novas em empresas antigas). */
   planoVersao?: number;
+  /**
+   * Só no formato guardado (nuvem, navegador e cópia de segurança): os outros perfis da mesma conta.
+   * O primeiro perfil fica na raiz, assim versões antigas do app continuam abrindo a empresa.
+   */
+  outrosPerfis?: Dados[];
 }

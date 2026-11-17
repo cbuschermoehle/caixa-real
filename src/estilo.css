@@ -488,3 +488,45 @@ input:focus, select:focus { border-color: var(--acento); outline: 2px solid colo
 .linha-parcela { display: grid; grid-template-columns: 2.2em 1fr 1fr; gap: 6px; align-items: center; }
 .linha-parcela input { min-width: 0; }
 .num-parcela { font-weight: 700; color: var(--tinta-2); font-variant-numeric: tabular-nums; }
+
+/* ---------- Perfis (empresa e pessoal) ---------- */
+.perfil-troca { position: relative; min-width: 0; flex: 1; display: flex; }
+.perfil-botao { display: flex; align-items: center; gap: 10px; min-width: 0; background: none; border: 0; padding: 4px 6px 4px 0; color: inherit; font: inherit; cursor: pointer; border-radius: var(--raio-p); }
+.perfil-botao:hover .marca-nome, .perfil-botao:focus-visible .marca-nome { text-decoration: underline; text-underline-offset: 3px; }
+.perfil-botao .seta-baixo { transform: rotate(90deg); flex: none; color: var(--tinta-2); }
+.perfil-tipo { font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--tinta-2); white-space: nowrap; }
+.perfil-menu { position: absolute; top: calc(100% + 6px); left: 0; z-index: 30; min-width: 260px; max-width: calc(100vw - 32px); background: var(--superficie); border: 1px solid var(--linha); border-radius: var(--raio); box-shadow: var(--sombra); padding: 6px; display: grid; gap: 2px; }
+.perfil-menu button { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; background: none; border: 0; padding: 10px 12px; border-radius: var(--raio-p); color: var(--tinta); font: inherit; cursor: pointer; }
+.perfil-menu button:hover, .perfil-menu button:focus-visible { background: var(--superficie-2); }
+.perfil-menu button[aria-current='true'] { background: var(--acento-suave); font-weight: 700; }
+.perfil-menu .perfil-menu-nome { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.perfil-menu .perfil-novo { color: var(--acento); font-weight: 700; border-top: 1px solid var(--linha); border-radius: 0 0 var(--raio-p) var(--raio-p); margin-top: 4px; }
+.escolha-perfil { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin: 20px 0; }
+.escolha-perfil button { text-align: left; background: var(--superficie); border: 2px solid var(--linha); border-radius: var(--raio); padding: 18px; color: var(--tinta); font: inherit; cursor: pointer; display: grid; gap: 4px; }
+.escolha-perfil button:hover, .escolha-perfil button:focus-visible { border-color: var(--acento); }
+.escolha-perfil strong { font-family: var(--fonte-titulo); font-size: 1.15rem; }
+.escolha-perfil span { color: var(--tinta-2); font-size: 0.92rem; }
+
+/* ---------- Renda comprometida ---------- */
+.barra-progresso { position: relative; }
+.barra-progresso .marca-50, .barra-progresso .marca-70 { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--superficie); opacity: 0.9; }
+.barra-progresso .marca-50 { left: 50%; }
+.barra-progresso .marca-70 { left: 70%; }
+.faixa-ok span { background: var(--entrada); }
+.faixa-atencao span { background: var(--previsto); }
+.faixa-alto span { background: var(--saida); }
+
+/* ---------- Cartão de crédito ---------- */
+.cartoes { display: grid; gap: 14px; }
+.cartao-credito { display: grid; gap: 8px; padding-top: 12px; border-top: 1px solid var(--linha); }
+.cartao-credito:first-child { border-top: 0; padding-top: 0; }
+.cartao-credito-topo { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+.cartao-credito-topo strong { font-family: var(--fonte-titulo); }
+.cartao-credito .ajuda { margin: 0; }
+.faturas { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.faturas li { display: flex; justify-content: space-between; gap: 12px; font-size: 0.92rem; }
+.faturas li span:first-child { color: var(--tinta-2); }
+.fatura-campo { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.dias-cartao { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.onb-conta-cartao { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; grid-column: 1 / -1; font-size: 0.9rem; color: var(--tinta-2); }
+.onb-conta-cartao input { width: 64px; }

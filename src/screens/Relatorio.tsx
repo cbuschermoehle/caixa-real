@@ -1,10 +1,10 @@
 import { Fragment, useState, type ReactNode } from 'react';
 import type { Bloco } from '../types';
 import { useDados } from '../data/store';
-import { BLOCOS } from '../data/planos';
-import { cascata, pontoEquilibrio, saldos } from '../lib/calc';
+import { blocosDe, ehPessoal, linhasDoRelatorio } from '../data/planos';
+import { cascata, pontoEquilibrio, rendaComprometida, saldos } from '../lib/calc';
 import { brl, dataBR, hoje, mesDe, nomeMes, somaDias, somaMesesMes } from '../lib/format';
-import { Chave, Icone } from '../components/ui';
+import { BarraComprometida, Chave, Icone } from '../components/ui';
 import { FechamentoPDF, imprimirFechamento } from '../components/FechamentoPDF';
 
 export function Relatorio() {
@@ -14,6 +14,9 @@ export function Relatorio() {
   const [abertos, setAbertos] = useState<Set<Bloco>>(new Set());
   const c = cascata(dados, mes);
   const pe = pontoEquilibrio(dados, mes);
+  const pessoal = ehPessoal(dados.empresa);
+  const blocos = blocosDe(dados.empresa);
+  const rc = rendaComprometida(c);
   const base = c.blocos.entradas.realizado + (comPrevistos ? c.blocos.entradas.previsto : 0);
   const pct = (v: number) => (base ? `${Math.round((v / base) * 100)}%` : '–');
   const inicioMes = somaDias(`${mes}-01`, -1);
@@ -43,7 +46,7 @@ export function Relatorio() {
 
   const linhaBloco = (b: Bloco, operador: '+' | '−' | '±') => {
     const t = c.blocos[b];
-    const info = BLOCOS.find((x) => x.id === b)!;
+    const info = blocos.find((x) => x.id === b)!;
     const aberto = abertos.has(b);
     return (
       <>
@@ -113,19 +116,15 @@ export function Relatorio() {
               <th scope="col" className="num">{comPrevistos ? 'Realizado' : 'Valor'}</th>
               {comPrevistos && <th scope="col" className="num">Falta</th>}
               {comPrevistos && <th scope="col" className="num">Esperado</th>}
-              <th scope="col" className="num pct">% entradas</th>
+              <th scope="col" className="num pct">{pessoal ? '% da renda' : '% entradas'}</th>
             </tr>
           </thead>
           <tbody>
-            {linhaBloco('entradas', '+')}
-            {linhaBloco('custos_variaveis', '−')}
-            {resultado('= Margem de contribuição', c.margem)}
-            {linhaBloco('despesas_fixas', '−')}
-            {resultado('= Resultado operacional', c.operacional)}
-            {linhaBloco('investimentos', '−')}
-            {resultado('= Resultado após investimentos', c.aposInvestimentos)}
-            {linhaBloco('outras', '±')}
-            {resultado('= Variação do caixa', c.variacao, true)}
+            {linhasDoRelatorio(dados.empresa).map((x) => (
+              <Fragment key={'bloco' in x ? x.bloco : x.resultado}>
+                {'bloco' in x ? linhaBloco(x.bloco, x.op) : resultado(x.rotulo, c[x.resultado], x.forte)}
+              </Fragment>
+            ))}
           </tbody>
         </table>
       </div>
@@ -141,8 +140,22 @@ export function Relatorio() {
             <div><dt>Variação do caixa (realizado)</dt><dd>{brl(c.variacao[0])}</dd></div>
             <div><dt>Saldo no fim do mês</dt><dd><strong>{brl(saldoFim)}</strong></dd></div>
           </dl>
-          <p className="ajuda">Soma de todas as contas, com aplicações. Transferências entre contas não alteram esse total.</p>
+          <p className="ajuda">Soma de todas as contas, com aplicações e sem cartões de crédito. Transferências entre contas não alteram esse total; compras no cartão contam no mês em que a fatura vence.</p>
         </section>
+        {pessoal ? (
+          <section className="cartao">
+            <h2>Renda comprometida</h2>
+            {rc.pct === null ? (
+              <p className="ajuda">Lance a renda do mês (pode ser prevista) para ver quanto dela já está comprometido.</p>
+            ) : (
+              <>
+                <BarraComprometida pct={rc.pct} faixa={rc.faixa!} />
+                <p><strong>{rc.pct}%</strong> da renda de {brl(rc.renda)} vai para gastos essenciais ({brl(rc.essenciais)}) e dívidas ({brl(rc.dividas)}), contando o que já foi pago e o que está previsto.</p>
+                <p className="ajuda">Referência: até 50% é tranquilo, de 50% a 70% pede atenção, acima de 70% sobra pouco para o dia a dia e para investir.</p>
+              </>
+            )}
+          </section>
+        ) : (
         <section className="cartao">
           <h2>Ponto de equilíbrio</h2>
           {pe.fixas === 0 ? (
@@ -153,6 +166,7 @@ export function Relatorio() {
             <p>As despesas fixas são de <strong>{brl(pe.fixas)}</strong>. A margem acumulada está em {brl(pe.margemAcumulada)}, faltam <strong>{brl(pe.falta)}</strong>.</p>
           )}
         </section>
+        )}
       </div>
     </div>
   );

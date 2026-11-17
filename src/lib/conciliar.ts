@@ -59,7 +59,8 @@ export function confirmarLinha(dados: Dados, t: TransacaoExtrato, e: Escolha): {
   if (e.tipo === 'vinculo') {
     const l = dados.lancamentos.find((x) => x.id === e.lancamentoId);
     if (!l) return null;
-    const conta = l.tipo === 'transferencia' ? {} : { contaId: t.contaId };
+    // Transferência (ex.: pagamento de fatura do cartão) fica com o valor que saiu de verdade no banco.
+    const conta = l.tipo === 'transferencia' ? { valor } : { contaId: t.contaId };
     lancamento = { ...l, ...conta, status: 'pago', data: t.data, extratoId: t.id };
     const d = diferencaDaBaixa(dados, l, valor);
     if (d?.tipo === 'juros') {
@@ -119,7 +120,7 @@ const fmt = (c: number) => (c / 100).toLocaleString('pt-BR', { style: 'currency'
 export function previstosParaBaixa(dados: Dados, t: TransacaoExtrato, excluir: Set<string> = new Set(), limite = 40): Lancamento[] {
   const sentido = sentidoDe(t);
   return dados.lancamentos
-    .filter((l) => l.status === 'previsto' && l.tipo === sentido && !l.extratoId && !excluir.has(l.id))
+    .filter((l) => l.status === 'previsto' && !l.extratoId && !excluir.has(l.id) && (l.tipo === sentido || (l.tipo === 'transferencia' && direcaoNaConta(l, t.contaId) === Math.sign(t.valor))))
     .sort((a, b) => Math.abs(diasEntre(a.data, t.data)) - Math.abs(diasEntre(b.data, t.data)) || Math.abs(a.valor - Math.abs(t.valor)) - Math.abs(b.valor - Math.abs(t.valor)))
     .slice(0, limite);
 }

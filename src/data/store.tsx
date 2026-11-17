@@ -1,5 +1,6 @@
-import { createContext, useContext, useEffect, useReducer, useRef, type ReactNode } from 'react';
-import { VERSAO_PLANO, atualizarPlano } from './planos';
+import { createContext, useContext, useEffect, useMemo, useReducer, useRef, type ReactNode } from 'react';
+import { VERSAO_PLANO, atualizarPlano, blocosDe } from './planos';
+import { sincronizarFaturas } from '../lib/cartao';
 import type { Categoria, Conta, Dados, Empresa, Importacao, Lancamento, ModeloColunas, Regra, TransacaoExtrato } from '../types';
 
 /*
@@ -9,6 +10,8 @@ import type { Categoria, Conta, Dados, Empresa, Importacao, Lancamento, ModeloCo
  */
 
 const CHAVE = 'caixa-real:v1';
+/** Perfil aberto neste aparelho (id da empresa). Fica só no navegador: trocar de perfil não mexe nos dados. */
+const CHAVE_PERFIL = 'caixa-real:perfil';
 
 export const vazio: Dados = { versao: 1, empresa: null, contas: [], categorias: [], lancamentos: [] };
 
@@ -27,6 +30,12 @@ export type Acao =
   | { t: 'excluirRegra'; id: string }
   | { t: 'restaurar'; dados: Dados }
   | { t: 'zerar' };
+
+/** Ações sobre o conjunto de perfis (empresa e pessoal) da mesma conta. */
+export type AcaoPerfil =
+  | { t: 'trocarPerfil'; indice: number }
+  | { t: 'novoPerfil' }
+  | { t: 'cancelarNovoPerfil' };
 
 function upsert<T extends { id: string }>(lista: T[], item: T): T[] {
   const i = lista.findIndex((x) => x.id === item.id);
@@ -97,7 +106,7 @@ export function reducer(d: Dados, a: Acao): Dados {
     case 'excluirRegra':
       return { ...d, regras: (d.regras ?? []).filter((r) => r.id !== a.id) };
     case 'restaurar':
-      return migrar(a.dados);
+      return migrar(semExtras(a.dados));
     case 'zerar':
       return vazio;
   }
@@ -111,10 +120,90 @@ export function ehDados(x: unknown): x is Dados {
 
 /** Inclui categorias novas do plano padrão em empresas criadas antes delas. */
 export function migrar(d: Dados): Dados {
-  if (d.empresa && (d.planoVersao ?? 1) < VERSAO_PLANO) {
+  if (d.empresa && d.empresa.tipo !== 'pessoal' && (d.planoVersao ?? 1) < VERSAO_PLANO) {
     return { ...d, categorias: atualizarPlano(d.categorias, d.planoVersao ?? 1), planoVersao: VERSAO_PLANO };
   }
   return d;
+}
+
+// ---------- Perfis ----------
+
+/** Todos os perfis da conta e qual está aberto. */
+export interface Cofre {
+  perfis: Dados[];
+  ativo: number;
+}
+
+const semExtras = (d: Dados): Dados => {
+  if (!('outrosPerfis' in d)) return d;
+  const { outrosPerfis: _, ...resto } = d;
+  return resto;
+};
+
+/** Abre o formato guardado: o primeiro perfil na raiz e os demais em `outrosPerfis`. */
+export function abrirCofre(guardado: Dados, idAtivo?: string | null): Cofre {
+  const perfis = [semExtras(guardado), ...(guardado.outrosPerfis ?? []).filter(ehDados).map(semExtras)].map((p) => sincronizarFaturas(migrar(p)));
+  const i = idAtivo ? perfis.findIndex((p) => p.empresa?.id === idAtivo) : -1;
+  return { perfis, ativo: Math.max(0, i) };
+}
+
+/** Formato guardado. Perfis em branco (cadastro não terminado) não são gravados. */
+export function guardarCofre(perfis: Dados[]): Dados {
+  const cheios = perfis.filter((p) => p.empresa);
+  if (!cheios.length) return vazio;
+  const [primeiro, ...outros] = cheios.map(semExtras);
+  return outros.length ? { ...primeiro, outrosPerfis: outros } : primeiro;
+}
+
+const lerPerfilAtivo = () => {
+  try {
+    return localStorage.getItem(CHAVE_PERFIL);
+  } catch {
+    return null;
+  }
+};
+const gravarPerfilAtivo = (id?: string) => {
+  try {
+    if (id) localStorage.setItem(CHAVE_PERFIL, id);
+  } catch {
+    /* sem armazenamento */
+  }
+};
+
+export function reducerCofre(c: Cofre, a: Acao | AcaoPerfil): Cofre {
+  const trocar = (perfis: Dados[], ativo: number): Cofre => ({ perfis, ativo: Math.min(Math.max(0, ativo), perfis.length - 1) });
+  switch (a.t) {
+    case 'trocarPerfil': {
+      // Some com perfis em branco que ficaram para trás (cadastro abandonado).
+      const alvo = c.perfis[a.indice];
+      if (!alvo) return c;
+      const perfis = c.perfis.filter((p) => p.empresa || p === alvo);
+      return trocar(perfis, perfis.indexOf(alvo));
+    }
+    case 'novoPerfil': {
+      const perfis = c.perfis.filter((p) => p.empresa);
+      return trocar([...perfis, vazio], perfis.length);
+    }
+    case 'cancelarNovoPerfil': {
+      const perfis = c.perfis.filter((p) => p.empresa);
+      return perfis.length ? trocar(perfis, 0) : c;
+    }
+    case 'zerar': {
+      // Apaga só o perfil aberto; se for o único, volta ao cadastro.
+      const perfis = c.perfis.filter((_, i) => i !== c.ativo);
+      return perfis.length ? trocar(perfis, 0) : trocar([vazio], 0);
+    }
+    case 'restaurar':
+      // Cópia com vários perfis substitui tudo; cópia de um perfil só substitui o perfil aberto.
+      if (a.dados.outrosPerfis?.length) return abrirCofre(a.dados, c.perfis[c.ativo]?.empresa?.id);
+      break;
+  }
+  const atual = c.perfis[c.ativo] ?? vazio;
+  const novo = sincronizarFaturas(reducer(atual, a as Acao));
+  if (novo === atual) return c;
+  const perfis = c.perfis.slice();
+  perfis[c.ativo] = novo;
+  return { ...c, perfis };
 }
 
 export function carregarLocal(chave = CHAVE): Dados {
@@ -136,24 +225,43 @@ function salvarLocal(d: Dados) {
   }
 }
 
-const Ctx = createContext<{ dados: Dados; despachar: (a: Acao) => void } | null>(null);
+interface ValorCtx {
+  /** Perfil aberto. */
+  dados: Dados;
+  despachar: (a: Acao | AcaoPerfil) => void;
+  perfis: Dados[];
+  ativo: number;
+  /** Tudo, no formato da cópia de segurança (todos os perfis). */
+  guardado: Dados;
+}
+
+const Ctx = createContext<ValorCtx | null>(null);
 
 export function ProvedorDados({ children, inicial, salvar = salvarLocal }: { children: ReactNode; inicial?: Dados; salvar?: (d: Dados) => void }) {
-  const [dados, despachar] = useReducer(reducer, inicial, (i) => (i ? migrar(i) : carregarLocal()));
+  const [cofre, despachar] = useReducer(reducerCofre, inicial, (i) => abrirCofre(i ?? carregarLocal(), lerPerfilAtivo()));
+  const guardado = useMemo(() => guardarCofre(cofre.perfis), [cofre.perfis]);
   const primeira = useRef(true);
   useEffect(() => {
-    // Não regrava o que acabou de chegar, a não ser que a migração do plano tenha mudado algo.
+    // Não regrava o que acabou de chegar, a não ser que a abertura (migração do plano, faturas) tenha mudado algo.
     if (primeira.current) {
       primeira.current = false;
-      if (inicial && dados === inicial) return;
+      if (JSON.stringify(guardado) === JSON.stringify(inicial ?? carregarLocal())) return;
     }
-    salvar(dados);
-  }, [dados]); // eslint-disable-line react-hooks/exhaustive-deps
-  return <Ctx.Provider value={{ dados, despachar }}>{children}</Ctx.Provider>;
+    salvar(guardado);
+  }, [guardado]); // eslint-disable-line react-hooks/exhaustive-deps
+  const dados = cofre.perfis[cofre.ativo] ?? vazio;
+  useEffect(() => gravarPerfilAtivo(dados.empresa?.id), [dados.empresa?.id]);
+  const valor = useMemo(() => ({ dados, despachar, perfis: cofre.perfis, ativo: cofre.ativo, guardado }), [dados, cofre, guardado]);
+  return <Ctx.Provider value={valor}>{children}</Ctx.Provider>;
 }
 
 export function useDados() {
   const v = useContext(Ctx);
   if (!v) throw new Error('useDados fora do ProvedorDados');
   return v;
+}
+
+/** Blocos do perfil aberto (nomes de empresa ou pessoais). */
+export function useBlocos() {
+  return blocosDe(useDados().dados.empresa);
 }

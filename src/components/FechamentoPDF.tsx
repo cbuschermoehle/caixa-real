@@ -1,7 +1,8 @@
 import { Fragment } from 'react';
 import { createPortal } from 'react-dom';
 import type { Bloco, Dados, Lancamento } from '../types';
-import { BLOCOS } from '../data/planos';
+import { blocosDe, ehPessoal, linhasDoRelatorio } from '../data/planos';
+import { dataDeCaixa } from '../lib/cartao';
 import { cascata, saldoConta, saldos, type LinhaCategoria } from '../lib/calc';
 import { nomeCategoria, raiz, rotuloDocumento } from '../lib/categorias';
 import { brl, dataBR, hoje, mesDe, nomeMes, somaDias, somaMesesMes } from '../lib/format';
@@ -11,14 +12,6 @@ import { brl, dataBR, hoje, mesDe, nomeMes, somaDias, somaMesesMes } from '../li
  * Fica escondido na tela; ao clicar em "Baixar PDF" o navegador abre a janela de impressão
  * e a pessoa escolhe "Salvar como PDF". Não precisa de biblioteca nem de internet.
  */
-
-const ORDEM: { b: Bloco; op: string }[] = [
-  { b: 'entradas', op: '+' },
-  { b: 'custos_variaveis', op: '−' },
-  { b: 'despesas_fixas', op: '−' },
-  { b: 'investimentos', op: '−' },
-  { b: 'outras', op: '±' },
-];
 
 /** Abre a janela de impressão com um nome de arquivo sugerido (o título da página). */
 export function imprimirFechamento(nomeArquivo: string) {
@@ -34,6 +27,8 @@ export function imprimirFechamento(nomeArquivo: string) {
 
 export function FechamentoPDF({ dados, mes, comPrevistos }: { dados: Dados; mes: string; comPrevistos: boolean }) {
   const c = cascata(dados, mes);
+  const blocos = blocosDe(dados.empresa);
+  const nomeDo = (b: Bloco) => blocos.find((x) => x.id === b)!.nome;
   const cats = new Map(dados.categorias.map((x) => [x.id, x]));
   const contas = new Map(dados.contas.map((x) => [x.id, x]));
   const inicioMes = somaDias(`${mes}-01`, -1);
@@ -43,7 +38,7 @@ export function FechamentoPDF({ dados, mes, comPrevistos }: { dados: Dados; mes:
   const h = hoje();
 
   const doMes = dados.lancamentos
-    .filter((l) => mesDe(l.data) === mes && (comPrevistos || l.status === 'pago'))
+    .filter((l) => mesDe(dataDeCaixa(l, contas)) === mes && (comPrevistos || l.status === 'pago'))
     .sort((a, b) => a.data.localeCompare(b.data) || a.criadoEm.localeCompare(b.criadoEm));
   const porBloco = (b: Bloco) =>
     doMes.filter((l) => {
@@ -86,7 +81,7 @@ export function FechamentoPDF({ dados, mes, comPrevistos }: { dados: Dados; mes:
     return (
       <Fragment key={b}>
         <tr className="p-bloco">
-          <th>{op} {BLOCOS.find((x) => x.id === b)!.nome}</th>
+          <th>{op} {nomeDo(b)}</th>
           {cols(t.realizado, t.previsto)}
         </tr>
         {t.linhas.filter(temValor).map((l) => (
@@ -174,19 +169,11 @@ export function FechamentoPDF({ dados, mes, comPrevistos }: { dados: Dados; mes:
               <th className="num">{comPrevistos ? 'Realizado' : 'Valor'}</th>
               {comPrevistos && <th className="num">Falta</th>}
               {comPrevistos && <th className="num">Esperado</th>}
-              <th className="num">% entradas</th>
+              <th className="num">{ehPessoal(dados.empresa) ? '% da renda' : '% entradas'}</th>
             </tr>
           </thead>
           <tbody>
-            {blocoResumo('entradas', '+')}
-            {blocoResumo('custos_variaveis', '−')}
-            {resultado('= Margem de contribuição', c.margem)}
-            {blocoResumo('despesas_fixas', '−')}
-            {resultado('= Resultado operacional', c.operacional)}
-            {blocoResumo('investimentos', '−')}
-            {resultado('= Resultado após investimentos', c.aposInvestimentos)}
-            {blocoResumo('outras', '±')}
-            {resultado('= Variação do caixa', c.variacao, true)}
+            {linhasDoRelatorio(dados.empresa).map((x) => ('bloco' in x ? blocoResumo(x.bloco, x.op) : <Fragment key={x.resultado}>{resultado(x.rotulo, c[x.resultado], x.forte)}</Fragment>))}
           </tbody>
         </table>
       </section>
@@ -217,7 +204,7 @@ export function FechamentoPDF({ dados, mes, comPrevistos }: { dados: Dados; mes:
       <section className="p-quebra">
         <h2>Movimentações do mês</h2>
         {doMes.length === 0 && <p>Nenhum lançamento neste mês.</p>}
-        {ORDEM.map(({ b }) => tabelaMov(BLOCOS.find((x) => x.id === b)!.nome, porBloco(b)))}
+        {blocos.map((b) => tabelaMov(b.nome, porBloco(b.id)))}
         {tabelaMov('Sem categoria', semCategoria)}
         {tabelaMov('Transferências entre contas (não entram no resultado)', transferencias, true)}
       </section>

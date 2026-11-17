@@ -9,7 +9,7 @@ import {
   type LinhaExtrato, type Mapeamento,
 } from '../lib/importar';
 import { brl, dataBR, dataCurta, hoje, novoId, parseValor, valorParaCampo } from '../lib/format';
-import { Campo, Folha, Icone, SeletorCategoria, SeletorConta } from '../components/ui';
+import { Campo, Confirmar, Folha, Icone, SeletorCategoria, SeletorConta } from '../components/ui';
 
 // ---------- Inbox ----------
 
@@ -232,7 +232,8 @@ export function Extrato() {
 }
 
 function Historico() {
-  const { dados } = useDados();
+  const { dados, despachar } = useDados();
+  const [desfazer, setDesfazer] = useState<Importacao | null>(null);
   const lista = [...(dados.importacoes ?? [])].reverse().slice(0, 8);
   if (!lista.length) return null;
   return (
@@ -243,9 +244,19 @@ function Historico() {
           <li key={i.id}>
             <span>{dataBR(i.em)} · {dados.contas.find((c) => c.id === i.contaId)?.nome} · {i.arquivo}</span>
             <span className="ajuda">{i.novas} novas{i.bloqueadas ? ` · ${i.bloqueadas} repetidas` : ''}</span>
+            <button type="button" className="btn btn-link" onClick={() => setDesfazer(i)}>Desfazer</button>
           </li>
         ))}
       </ul>
+      {desfazer && (
+        <Confirmar
+          perigo
+          texto={<>Desfazer a importação de <strong>{desfazer.arquivo}</strong> em {dados.contas.find((c) => c.id === desfazer.contaId)?.nome}? As linhas deste arquivo e os lançamentos criados a partir delas serão apagados. Contas previstas que tinham sido baixadas por ele voltam a ficar previstas. Depois você pode importar o arquivo de novo, na conta certa.</>}
+          rotuloOk="Desfazer importação"
+          aoConfirmar={() => { despachar({ t: 'desfazerImportacao', id: desfazer.id }); setDesfazer(null); }}
+          aoCancelar={() => setDesfazer(null)}
+        />
+      )}
     </section>
   );
 }
@@ -257,7 +268,8 @@ interface Lido { nome: string; formato: 'ofx' | 'csv' | 'xlsx'; linhasOfx?: Linh
 function Importar({ aoFechar }: { aoFechar: () => void }) {
   const { dados, despachar } = useDados();
   const ativas = dados.contas.filter((c) => !c.arquivada && c.tipo !== 'aplicacao');
-  const [contaId, setContaId] = useState(ativas[0]?.id ?? '');
+  // Com mais de uma conta, a pessoa escolhe sempre: evita importar o extrato de um banco na conta de outro.
+  const [contaId, setContaId] = useState(ativas.length === 1 ? ativas[0].id : '');
   const [lido, setLido] = useState<Lido | null>(null);
   const [map, setMap] = useState<Mapeamento | null>(null);
   const [lembrado, setLembrado] = useState(false);
@@ -348,10 +360,12 @@ function Importar({ aoFechar }: { aoFechar: () => void }) {
   return (
     <Folha titulo="Importar extrato" aoFechar={aoFechar}>
       <div className="form">
-        <Campo rotulo="Em qual conta essas movimentações aconteceram?" id="i-conta">
+        <Campo rotulo="De qual banco é este extrato?" id="i-conta">
           <SeletorConta id="i-conta" valor={contaId} aoMudar={(v) => { setContaId(v); setLido(null); }} contas={ativas} />
         </Campo>
-        {!lido ? (
+        {!contaId ? (
+          <p className="ajuda">Escolha primeiro a conta do banco deste extrato (por exemplo, o arquivo do Nubank vai na conta do Nubank).</p>
+        ) : !lido ? (
           <label
             className={`soltar ${arrastando ? 'ativo' : ''}`}
             onDragOver={(e) => { e.preventDefault(); setArrastando(true); }}

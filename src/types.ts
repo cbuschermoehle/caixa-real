@@ -68,6 +68,8 @@ export interface Pendente {
   data: string;
   descricao?: string;
   criadoEm: string;
+  /** Foto do cupom: caminho no Supabase Storage, ou imagem embutida (data:) na versão de teste. */
+  foto?: string;
 }
 
 /** Tipos de investimento no modo simples (sem ativo por ativo). */
@@ -128,6 +130,10 @@ export interface Lancamento {
   fatura?: string;
   /** Pagamento de fatura previsto criado e atualizado sozinho pelo app. */
   faturaAuto?: boolean;
+  /** Foto do cupom (veio do Lançamento rápido). Mesmo formato de `Pendente.foto`. */
+  anexo?: string;
+  /** No pessoal: lançamento da empresa (distribuição de lucros, pró-labore) que originou esta entrada. */
+  repasse?: { perfilId: string; lancamentoId: string };
 }
 
 export type SituacaoExtrato = 'pendente' | 'confirmada' | 'ignorada';
@@ -193,4 +199,8 @@ export interface Dados {
   avaliacoes?: Avaliacao[];
   /** Bens do patrimônio. */
   bens?: Bem[];
+  /** Repasses da empresa que a pessoa disse não serem dela (ids dos lançamentos da empresa). */
+  repassesIgnorados?: string[];
+  /** Lembretes de renovação já resolvidos (chave categoria|data prevista). */
+  lembretesVistos?: string[];
 }

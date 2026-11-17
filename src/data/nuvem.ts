@@ -93,3 +93,35 @@ function traduzir(m: string): string {
   if (t.includes('valid email') || t.includes('invalid format')) return 'Confira o e-mail digitado.';
   return m;
 }
+
+// ---------- Fotos dos cupons (Supabase Storage, pasta privada "cupons") ----------
+
+const PASTA = 'cupons';
+
+function traduzirFoto(m: string): string {
+  const t = m.toLowerCase();
+  if (t.includes('bucket not found') || t.includes('not found')) return 'As fotos ainda não foram ativadas na nuvem (falta criar a pasta "cupons" no Supabase).';
+  if (t.includes('row-level security') || t.includes('unauthorized') || t.includes('policy')) return 'A nuvem recusou a foto: faltam as permissões da pasta "cupons" no Supabase.';
+  if (t.includes('payload too large') || t.includes('size')) return 'A foto ficou grande demais.';
+  return traduzir(m);
+}
+
+/** Cada usuário guarda as fotos numa subpasta com o próprio id; as regras do Supabase impedem ver a de outra pessoa. */
+export function servicoFotos(usuario: string) {
+  return {
+    async enviar(nome: string, imagem: Blob) {
+      const caminho = `${usuario}/${nome}.jpg`;
+      const { error } = await supabase.storage.from(PASTA).upload(caminho, imagem, { contentType: 'image/jpeg', upsert: true });
+      if (error) throw new Error(traduzirFoto(error.message));
+      return caminho;
+    },
+    async endereco(ref: string) {
+      const { data, error } = await supabase.storage.from(PASTA).createSignedUrl(ref, 60 * 10);
+      if (error || !data) throw new Error(traduzirFoto(error?.message ?? 'not found'));
+      return data.signedUrl;
+    },
+    async apagar(ref: string) {
+      await supabase.storage.from(PASTA).remove([ref]);
+    },
+  };
+}

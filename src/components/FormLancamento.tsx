@@ -5,8 +5,15 @@ import { nomeCategoria, rotuloDocumento } from '../lib/categorias';
 import { brl, dataBR, hoje, mesCurto, novoId, parseValor, somaMeses, somaMesesMes, valorParaCampo } from '../lib/format';
 import { ehCartao, faturaDaCompra, vencimentoDaFatura } from '../lib/cartao';
 import { Campo, Chave, Confirmar, Folha, Segmentos, SeletorCategoria, SeletorConta } from './ui';
+import { VerCupom, useFotos } from './Cupom';
 
-type Repeticao = 'nao' | 'mensal' | 'parcelado';
+type Repeticao = 'nao' | 'mensal' | 'anual' | 'parcelado';
+
+/** Valores para começar um lançamento novo (lançamento rápido, renovação anual). */
+export interface InicialForm { valor?: number; data: string; descricao?: string; foto?: string; categoriaId?: string; repeticao?: Repeticao; vezes?: number }
+
+/** Meses entre uma repetição e a seguinte. */
+const passo = (r: Repeticao) => (r === 'anual' ? 12 : 1);
 
 const TITULOS: Record<TipoLancamento, string> = { entrada: 'Nova entrada', saida: 'Nova saída', transferencia: 'Transferência entre contas' };
 
@@ -15,16 +22,17 @@ export function FormLancamento({ tipoInicial, editar, aoFechar, inicial, aoSalva
   editar?: Lancamento;
   aoFechar: () => void;
   /** Valores para começar (ex.: um lançamento rápido sendo completado). */
-  inicial?: { valor: number; data: string; descricao?: string };
+  inicial?: InicialForm;
   /** Chamado depois de salvar (antes de fechar). */
   aoSalvar?: () => void;
 }) {
   const { dados, despachar } = useDados();
+  const fotos = useFotos();
   const contasAtivas = dados.contas.filter((c) => !c.arquivada);
   const [tipo, setTipo] = useState<TipoLancamento>(editar?.tipo ?? tipoInicial);
-  const [valor, setValor] = useState(editar ? valorParaCampo(editar.valor) : inicial ? valorParaCampo(inicial.valor) : '');
+  const [valor, setValor] = useState(editar ? valorParaCampo(editar.valor) : inicial?.valor ? valorParaCampo(inicial.valor) : '');
   const [data, setData] = useState(editar?.data ?? inicial?.data ?? hoje());
-  const [categoriaId, setCategoriaId] = useState(editar?.categoriaId ?? '');
+  const [categoriaId, setCategoriaId] = useState(editar?.categoriaId ?? inicial?.categoriaId ?? '');
   const [contaId, setContaId] = useState(editar?.contaId ?? (contasAtivas.length === 1 ? contasAtivas[0].id : contasAtivas[0]?.id ?? ''));
   const [destinoId, setDestinoId] = useState(editar?.contaDestinoId ?? '');
   const [pago, setPago] = useState(editar ? editar.status === 'pago' : (inicial?.data ?? hoje()) <= hoje());
@@ -33,8 +41,8 @@ export function FormLancamento({ tipoInicial, editar, aoFechar, inicial, aoSalva
   const [docTipo, setDocTipo] = useState<'' | Documento['tipo']>(editar?.documento?.tipo ?? '');
   const [docNum, setDocNum] = useState(editar?.documento?.numero ?? '');
   const [nf, setNf] = useState(editar?.nf ?? '');
-  const [repeticao, setRepeticao] = useState<Repeticao>('nao');
-  const [vezes, setVezes] = useState('12');
+  const [repeticao, setRepeticao] = useState<Repeticao>(inicial?.repeticao ?? 'nao');
+  const [vezes, setVezes] = useState(inicial?.vezes ? String(inicial.vezes) : inicial?.repeticao === 'anual' ? '5' : inicial?.repeticao === 'parcelado' ? '3' : '12');
   // Parcelas com valor e vencimento próprios (nota parcelada em valores ou datas diferentes).
   const [ajustar, setAjustar] = useState(false);
   const [parcelas, setParcelas] = useState<{ data: string; valor: string }[]>([]);
@@ -87,6 +95,7 @@ export function FormLancamento({ tipoInicial, editar, aoFechar, inicial, aoSalva
     if (tipo === 'entrada' && docTipo && !docNum.trim()) er.doc = 'Digite o número da OS ou do pedido.';
     const n = Number(vezes);
     if (repeticao !== 'nao' && (!Number.isInteger(n) || n < 2 || n > 240)) er.vezes = 'Use de 2 a 240 vezes (20 anos).';
+    else if (repeticao === 'anual' && n > 30) er.vezes = 'Use de 2 a 30 anos.';
     const usarParcelas = repeticao === 'parcelado' && ajustar;
     const valoresParcelas = usarParcelas ? parcelas.map((p) => parseValor(p.valor)) : [];
     if (usarParcelas) {
@@ -112,6 +121,8 @@ export function FormLancamento({ tipoInicial, editar, aoFechar, inicial, aoSalva
       parcela: editar?.parcela,
       fatura: noCartao ? fatura : undefined,
       faturaAuto: editar?.faturaAuto,
+      anexo: editar?.anexo ?? inicial?.foto,
+      repasse: editar?.repasse,
     };
     // Compra no cartão já aconteceu: fica "paga" no cartão. O dinheiro sai quando a fatura é paga.
     const status = noCartao || pago ? 'pago' : 'previsto';
@@ -123,14 +134,14 @@ export function FormLancamento({ tipoInicial, editar, aoFechar, inicial, aoSalva
       const serieId = novoId();
       const lista: Lancamento[] = Array.from({ length: n }, (_, i) => {
         // No cartão, parcelas têm a data da compra e caem uma em cada fatura; "todo mês" repete a compra a cada mês.
-        const d = noCartao ? (repeticao === 'parcelado' ? data : somaMeses(data, i)) : usarParcelas ? parcelas[i].data : somaMeses(data, i);
+        const d = noCartao ? (repeticao === 'parcelado' ? data : somaMeses(data, i * passo(repeticao))) : usarParcelas ? parcelas[i].data : somaMeses(data, i * passo(repeticao));
         return {
           ...baseL,
           ...(usarParcelas ? { valor: valoresParcelas[i]! } : {}),
           id: novoId(),
           data: d,
           status: noCartao ? 'pago' : i === 0 ? status : 'previsto',
-          fatura: noCartao ? somaMesesMes(fatura, i) : undefined,
+          fatura: noCartao ? somaMesesMes(fatura, i * passo(repeticao)) : undefined,
           serieId,
           parcela: repeticao === 'parcelado' ? { n: i + 1, total: n } : undefined,
         };
@@ -143,12 +154,13 @@ export function FormLancamento({ tipoInicial, editar, aoFechar, inicial, aoSalva
 
   function excluir(comFuturos: boolean) {
     if (!editar) return;
+    if (editar.anexo) void fotos.apagar(editar.anexo).catch(() => undefined);
     despachar({ t: 'excluir', ids: [editar.id, ...(comFuturos ? futurosDaSerie.map((l) => l.id) : [])] });
     aoFechar();
   }
 
   const sentido = tipo === 'entrada' ? 'entrada' : 'saida';
-  const ultimaData = repeticao !== 'nao' && Number(vezes) >= 2 ? somaMeses(data, Number(vezes) - 1) : null;
+  const ultimaData = repeticao !== 'nao' && Number(vezes) >= 2 ? somaMeses(data, (Number(vezes) - 1) * passo(repeticao)) : null;
 
   return (
     <Folha titulo={editar ? 'Editar lançamento' : TITULOS[tipo]} aoFechar={aoFechar} tom={tipo}>
@@ -227,14 +239,14 @@ export function FormLancamento({ tipoInicial, editar, aoFechar, inicial, aoSalva
             <Segmentos
               rotulo="Repetir"
               valor={repeticao}
-              aoMudar={(r) => { setRepeticao(r); setAjustar(false); setVezes(r === 'mensal' ? '12' : '3'); }}
-              opcoes={[{ v: 'nao', r: 'Não repete' }, { v: 'mensal', r: 'Todo mês' }, { v: 'parcelado', r: 'Parcelado' }]}
+              aoMudar={(r) => { setRepeticao(r); setAjustar(false); setVezes(r === 'mensal' ? '12' : r === 'anual' ? '5' : '3'); }}
+              opcoes={[{ v: 'nao', r: 'Não repete' }, { v: 'mensal', r: 'Todo mês' }, { v: 'anual', r: 'Todo ano' }, { v: 'parcelado', r: 'Parcelado' }]}
             />
             {repeticao !== 'nao' && (
               <div className="linha-vezes">
-                <label htmlFor="f-vezes">{repeticao === 'mensal' ? 'Criar para os próximos' : 'Número de parcelas'}</label>
+                <label htmlFor="f-vezes">{repeticao === 'parcelado' ? 'Número de parcelas' : 'Criar para os próximos'}</label>
                 <input id="f-vezes" inputMode="numeric" value={vezes} onChange={(e) => { const v = e.target.value.replace(/\D/g, ''); setVezes(v); if (ajustar) setParcelas(montarParcelas(Number(v))); }} />
-                <span>{repeticao === 'mensal' ? 'meses' : 'vezes'}</span>
+                <span>{repeticao === 'mensal' ? 'meses' : repeticao === 'anual' ? 'anos' : 'vezes'}</span>
               </div>
             )}
             {repeticao === 'parcelado' && !noCartao && (
@@ -260,7 +272,7 @@ export function FormLancamento({ tipoInicial, editar, aoFechar, inicial, aoSalva
               <p className="ajuda">
                 {repeticao === 'parcelado'
                   ? <>Uma parcela em cada fatura, de {mesCurto(`${fatura}-01`)} a {mesCurto(`${somaMesesMes(fatura, Number(vezes) - 1)}-01`)}.{parseValor(valor) ? <> Total da compra: <strong>{brl(parseValor(valor)! * Number(vezes))}</strong>.</> : null}</>
-                  : <>A mesma compra entra em todas as faturas até {mesCurto(`${somaMesesMes(fatura, Number(vezes) - 1)}-01`)}.</>}
+                  : <>A mesma compra entra {repeticao === 'anual' ? 'uma vez por ano' : 'em todas as faturas'} até {mesCurto(`${somaMesesMes(fatura, (Number(vezes) - 1) * passo(repeticao))}-01`)}.</>}
               </p>
             ) : !(repeticao === 'parcelado' && ajustar) && ultimaData && (
               <p className="ajuda">
@@ -270,6 +282,8 @@ export function FormLancamento({ tipoInicial, editar, aoFechar, inicial, aoSalva
           </div>
         )}
         {editar?.parcela && <p className="ajuda">Parcela {editar.parcela.n} de {editar.parcela.total}.</p>}
+        {(editar?.anexo ?? inicial?.foto) && <VerCupom foto={(editar?.anexo ?? inicial?.foto)!} />}
+        {editar?.repasse && <p className="ajuda">Veio da empresa. Se mudar lá, o Painel avisa para atualizar aqui.</p>}
 
         {confirmarExclusao ? (
           <Confirmar

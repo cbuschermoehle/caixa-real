@@ -112,6 +112,8 @@ export function Livro({ editar, ir }: { editar: (l: Lancamento) => void; ir: (r:
                       {l.parcela && ` · ${l.parcela.n}/${l.parcela.total}`}
                       {l.fatura && l.tipo !== 'transferencia' && ` · fatura ${mesCurto(`${l.fatura}-01`)}`}
                       {rotuloDocumento(l) && ` · ${rotuloDocumento(l)}`}
+                      {l.anexo && ' · com cupom'}
+                      {l.repasse && ' · da empresa'}
                     </span>
                   </button>
                   {l.status === 'previsto' && <span className={`selo ${data < h ? 'selo-atraso' : 'selo-previsto'}`}>{data < h ? 'Atrasado' : 'Previsto'}</span>}

@@ -3,6 +3,7 @@ import type { Pendente } from '../types';
 import { useDados } from '../data/store';
 import { brl, dataAmigavel, hoje, novoId, parseValor } from '../lib/format';
 import { Campo, Folha, Icone } from './ui';
+import { EscolherFoto, VerCupom, useFotos } from './Cupom';
 
 /*
  * Lançamento rápido: anota só o valor (e uma palavra) na hora do gasto.
@@ -15,17 +16,33 @@ export function FormRapido({ aoFechar }: { aoFechar: () => void }) {
   const [descricao, setDescricao] = useState('');
   const [data, setData] = useState(hoje());
   const [erro, setErro] = useState('');
+  const [foto, setFoto] = useState<Blob | null>(null);
+  const [enviando, setEnviando] = useState(false);
+  const [semFoto, setSemFoto] = useState(false);
+  const fotos = useFotos();
   const campo = useRef<HTMLInputElement>(null);
   useEffect(() => {
     const t = window.setTimeout(() => campo.current?.focus(), 30);
     return () => window.clearTimeout(t);
   }, []);
-  function guardar(e: React.FormEvent) {
+  async function guardar(e: React.FormEvent) {
     e.preventDefault();
     const v = parseValor(valor);
     if (v === null || v <= 0) return setErro('Digite o valor, por exemplo 187,40.');
     if (!data) return setErro('Escolha a data.');
-    despachar({ t: 'pendente', pendente: { id: novoId(), valor: v, data, descricao: descricao.trim() || undefined, criadoEm: new Date().toISOString() } });
+    const id = novoId();
+    let ref: string | undefined;
+    if (foto && !semFoto) {
+      setEnviando(true);
+      try {
+        ref = await fotos.enviar(id, foto);
+      } catch (err) {
+        setEnviando(false);
+        setSemFoto(true);
+        return setErro(`${(err as Error).message} Toque em Guardar de novo para anotar sem a foto.`);
+      }
+    }
+    despachar({ t: 'pendente', pendente: { id, valor: v, data, descricao: descricao.trim() || undefined, criadoEm: new Date().toISOString(), foto: ref } });
     aoFechar();
   }
   return (
@@ -43,8 +60,9 @@ export function FormRapido({ aoFechar }: { aoFechar: () => void }) {
             <input id="r-data" type="date" value={data} onChange={(e) => setData(e.target.value)} />
           </Campo>
         </div>
+        <EscolherFoto arquivo={foto} aoMudar={(f) => { setFoto(f); setSemFoto(false); }} />
         <div className="acoes-form">
-          <button type="submit" className="btn btn-grande btn-saida">Guardar</button>
+          <button type="submit" className="btn btn-grande btn-saida" disabled={enviando}>{enviando ? 'Guardando a foto…' : semFoto ? 'Guardar sem a foto' : 'Guardar'}</button>
         </div>
       </form>
     </Folha>
@@ -53,6 +71,7 @@ export function FormRapido({ aoFechar }: { aoFechar: () => void }) {
 
 export function ListaPendentes({ aoFechar, completar }: { aoFechar: () => void; completar: (p: Pendente) => void }) {
   const { dados, despachar } = useDados();
+  const fotos = useFotos();
   const [apagar, setApagar] = useState<string | null>(null);
   const lista = [...(dados.pendentes ?? [])].sort((a, b) => a.data.localeCompare(b.data) || a.criadoEm.localeCompare(b.criadoEm));
   const total = lista.reduce((a, p) => a + p.valor, 0);
@@ -69,11 +88,12 @@ export function ListaPendentes({ aoFechar, completar }: { aoFechar: () => void; 
                 <span className="lanc-info">
                   <span className="lanc-titulo">{p.descricao || 'Sem descrição'}</span>
                   <span className="lanc-meta">{dataAmigavel(p.data)}</span>
+                  {p.foto && <VerCupom foto={p.foto} />}
                 </span>
                 <span className="valor lanc-valor neg">-{brl(p.valor)}</span>
                 {apagar === p.id ? (
                   <>
-                    <button type="button" className="btn btn-perigo" onClick={() => { despachar({ t: 'excluirPendente', id: p.id }); setApagar(null); }}>Apagar</button>
+                    <button type="button" className="btn btn-perigo" onClick={() => { if (p.foto) void fotos.apagar(p.foto).catch(() => undefined); despachar({ t: 'excluirPendente', id: p.id }); setApagar(null); }}>Apagar</button>
                     <button type="button" className="btn btn-link" onClick={() => setApagar(null)}>Não</button>
                   </>
                 ) : (

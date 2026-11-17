@@ -16,7 +16,7 @@ export function RestaurarCopia({ rotulo = 'Restaurar uma cópia de segurança', 
     setErro('');
     const d = lerCopia(await f.text());
     if (entrada.current) entrada.current.value = '';
-    if (!d) return setErro('Este arquivo não é uma cópia de segurança do Caixa Real.');
+    if (!d) return setErro('Este arquivo não é uma cópia de segurança do MicroCaixa Fácil.');
     if (confirmar) setLida(d);
     else despachar({ t: 'restaurar', dados: d });
   }

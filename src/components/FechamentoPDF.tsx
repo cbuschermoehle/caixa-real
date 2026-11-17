@@ -221,7 +221,7 @@ export function FechamentoPDF({ dados, mes, comPrevistos }: { dados: Dados; mes:
         {tabelaMov('Sem categoria', semCategoria)}
         {tabelaMov('Transferências entre contas (não entram no resultado)', transferencias, true)}
       </section>
-      <p className="p-rodape">Caixa Real · regime de caixa · valores em reais</p>
+      <p className="p-rodape">MicroCaixa Fácil · regime de caixa · valores em reais</p>
     </div>,
     document.body,
   );

@@ -1,6 +1,6 @@
 {
-  "name": "Caixa Real",
-  "short_name": "Caixa Real",
+  "name": "MicroCaixa Fácil",
+  "short_name": "MicroCaixa",
   "description": "Controle financeiro em regime de caixa para pequenas empresas",
   "lang": "pt-BR",
   "start_url": "./",

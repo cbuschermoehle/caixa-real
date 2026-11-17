@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { nomeCategoria } from '../lib/categorias';
+import { Fragment, useState } from 'react';
 import type { Bloco, Categoria, Conta, Sentido, TipoConta } from '../types';
 import { useDados } from '../data/store';
 import { BLOCOS, RAMOS, sentidoDoBloco } from '../data/planos';
@@ -14,6 +15,7 @@ export function Ajustes() {
   const [contaEd, setContaEd] = useState<Conta | 'nova' | null>(null);
   const [blocoAberto, setBlocoAberto] = useState<Bloco | null>('entradas');
   const [novaCat, setNovaCat] = useState<{ bloco: Bloco; nome: string; sentido: Sentido } | null>(null);
+  const [novaSub, setNovaSub] = useState<{ pai: Categoria; nome: string } | null>(null);
   const [renomear, setRenomear] = useState<{ id: string; nome: string } | null>(null);
   const [zerar, setZerar] = useState(false);
   const empresa = dados.empresa!;
@@ -49,14 +51,15 @@ export function Ajustes() {
 
       <section className="cartao">
         <h2>Categorias</h2>
-        <p className="ajuda">Renomeie, esconda ou crie categorias. Categorias escondidas somem da lista de escolha, mas os lançamentos antigos continuam nos relatórios.</p>
+        <p className="ajuda">Renomeie, esconda ou crie categorias. No botão + de uma categoria você cria subcategorias (ex.: Salários › cada funcionário); no relatório elas somam dentro da categoria. Categorias escondidas somem da lista de escolha, mas os lançamentos antigos continuam nos relatórios.</p>
         {BLOCOS.map((b) => {
-          const lista = dados.categorias.filter((c) => c.bloco === b.id).sort((a, z) => a.ordem - z.ordem);
+          const raizes = dados.categorias.filter((c) => c.bloco === b.id && !c.paiId).sort((a, z) => a.ordem - z.ordem);
+          const lista = raizes.flatMap((r) => [r, ...dados.categorias.filter((c) => c.paiId === r.id).sort((a, z) => a.ordem - z.ordem)]);
           const aberto = blocoAberto === b.id;
           return (
             <div key={b.id} className="bloco-cat">
               <button type="button" className="bloco-cat-topo" aria-expanded={aberto} onClick={() => setBlocoAberto(aberto ? null : b.id)}>
-                <span><strong>{b.nome}</strong> <span className="ajuda">{lista.filter((c) => !c.oculta).length} ativas</span></span>
+                <span><strong>{b.nome}</strong> <span className="ajuda">{raizes.filter((c) => !c.oculta).length} ativas</span></span>
                 <span className={`seta ${aberto ? 'aberta' : ''}`}><Icone nome="seta" tamanho={16} /></span>
               </button>
               {aberto && (
@@ -64,7 +67,8 @@ export function Ajustes() {
                   <p className="ajuda">{b.ajuda}</p>
                   <ul className="lista-cat">
                     {lista.map((c) => (
-                      <li key={c.id} className={c.oculta ? 'apagado' : ''}>
+                      <Fragment key={c.id}>
+                      <li className={`${c.oculta ? 'apagado' : ''} ${c.paiId ? 'sub' : ''}`}>
                         {renomear?.id === c.id ? (
                           <form className="renomear" onSubmit={(e) => { e.preventDefault(); if (renomear.nome.trim()) salvarCat({ ...c, nome: renomear.nome.trim() }); setRenomear(null); }}>
                             <input id={`rn-${c.id}`} value={renomear.nome} onChange={(e) => setRenomear({ id: c.id, nome: e.target.value })} aria-label="Novo nome" autoFocus />
@@ -73,17 +77,41 @@ export function Ajustes() {
                         ) : (
                           <>
                             <span>
+                              {c.paiId && <span className="ajuda" aria-hidden="true">↳ </span>}
                               {c.nome}
                               {b.id === 'outras' && <em className="ajuda"> · {c.sentido === 'entrada' ? 'entrada' : 'saída'}</em>}
-                              {c.grupo && <em className="ajuda"> · {c.grupo}</em>}
+                              {c.grupo && !c.paiId && <em className="ajuda"> · {c.grupo}</em>}
                             </span>
                             <button type="button" className="btn-icone" aria-label={`Renomear ${c.nome}`} onClick={() => setRenomear({ id: c.id, nome: c.nome })}><Icone nome="lapis" tamanho={16} /></button>
                             <button type="button" className="btn-icone" aria-label={c.oculta ? `Mostrar ${c.nome}` : `Esconder ${c.nome}`} onClick={() => salvarCat({ ...c, oculta: !c.oculta })}>
                               <Icone nome={c.oculta ? 'olhoFechado' : 'olho'} tamanho={16} />
                             </button>
+                            {!c.paiId && (
+                              <button type="button" className="btn-icone" aria-label={`Criar subcategoria em ${c.nome}`} title="Criar subcategoria" onClick={() => setNovaSub({ pai: c, nome: '' })}>
+                                <Icone nome="mais" tamanho={16} />
+                              </button>
+                            )}
                           </>
                         )}
                       </li>
+                      {novaSub?.pai.id === c.id && (
+                        <li className="sub">
+                          <form
+                            className="renomear"
+                            onSubmit={(e) => {
+                              e.preventDefault();
+                              if (!novaSub.nome.trim()) return;
+                              salvarCat({ id: novoId(), nome: novaSub.nome.trim(), bloco: c.bloco, sentido: c.sentido, grupo: c.grupo, paiId: c.id, oculta: false, ordem: Math.max(0, ...dados.categorias.map((x) => x.ordem)) + 1 });
+                              setNovaSub(null);
+                            }}
+                          >
+                            <input id={`ns-${c.id}`} value={novaSub.nome} placeholder={`Subcategoria de ${c.nome}`} onChange={(e) => setNovaSub({ ...novaSub, nome: e.target.value })} aria-label={`Nome da subcategoria de ${c.nome}`} autoFocus />
+                            <button type="submit" className="btn btn-primario">Criar</button>
+                            <button type="button" className="btn btn-link" onClick={() => setNovaSub(null)}>Cancelar</button>
+                          </form>
+                        </li>
+                      )}
+                      </Fragment>
                     ))}
                   </ul>
                   {novaCat?.bloco === b.id ? (
@@ -127,7 +155,7 @@ export function Ajustes() {
                 <li key={r.id}>
                   <div>
                     <strong className="mono">{r.trecho}</strong>
-                    <span className="ajuda">{r.sentido === 'entrada' ? 'Entrada' : 'Saída'} → {dados.categorias.find((c) => c.id === r.categoriaId)?.nome ?? 'categoria apagada'} · usada {r.usos}x</span>
+                    <span className="ajuda">{r.sentido === 'entrada' ? 'Entrada' : 'Saída'} → {nomeCategoria(r.categoriaId, dados.categorias) || 'categoria apagada'} · usada {r.usos}x</span>
                   </div>
                   <button type="button" className="btn-icone" aria-label={`Apagar regra ${r.trecho}`} onClick={() => despachar({ t: 'excluirRegra', id: r.id })}><Icone nome="x" tamanho={16} /></button>
                 </li>

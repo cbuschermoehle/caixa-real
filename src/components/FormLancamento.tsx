@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import type { Lancamento, TipoLancamento } from '../types';
+import type { Documento, Lancamento, TipoLancamento } from '../types';
 import { useDados } from '../data/store';
+import { nomeCategoria, rotuloDocumento } from '../lib/categorias';
 import { dataBR, hoje, novoId, parseValor, somaMeses, valorParaCampo } from '../lib/format';
 import { Campo, Chave, Confirmar, Folha, Segmentos, SeletorCategoria, SeletorConta } from './ui';
 
@@ -20,6 +21,9 @@ export function FormLancamento({ tipoInicial, editar, aoFechar }: { tipoInicial:
   const [pago, setPago] = useState(editar ? editar.status === 'pago' : true);
   const [mexeuPago, setMexeuPago] = useState(!!editar);
   const [descricao, setDescricao] = useState(editar?.descricao ?? '');
+  const [docTipo, setDocTipo] = useState<'' | Documento['tipo']>(editar?.documento?.tipo ?? '');
+  const [docNum, setDocNum] = useState(editar?.documento?.numero ?? '');
+  const [nf, setNf] = useState(editar?.nf ?? '');
   const [repeticao, setRepeticao] = useState<Repeticao>('nao');
   const [vezes, setVezes] = useState('12');
   const [erros, setErros] = useState<Record<string, string>>({});
@@ -45,6 +49,7 @@ export function FormLancamento({ tipoInicial, editar, aoFechar }: { tipoInicial:
       if (!destinoId) er.destino = 'Escolha a conta que recebe.';
       else if (destinoId === contaId) er.destino = 'A conta de destino precisa ser diferente da de origem.';
     } else if (!categoriaId) er.categoria = 'Escolha a categoria.';
+    if (tipo === 'entrada' && docTipo && !docNum.trim()) er.doc = 'Digite o número da OS ou do pedido.';
     const n = Number(vezes);
     if (repeticao !== 'nao' && (!Number.isInteger(n) || n < 2 || n > 240)) er.vezes = 'Use de 2 a 240 vezes (20 anos).';
     setErros(er);
@@ -57,6 +62,8 @@ export function FormLancamento({ tipoInicial, editar, aoFechar }: { tipoInicial:
       contaDestinoId: tipo === 'transferencia' ? destinoId : undefined,
       categoriaId: tipo === 'transferencia' ? undefined : categoriaId,
       descricao: descricao.trim() || undefined,
+      documento: tipo === 'entrada' && docTipo && docNum.trim() ? { tipo: docTipo, numero: docNum.trim() } : undefined,
+      nf: tipo === 'entrada' && nf.trim() ? nf.trim() : undefined,
       origem: editar?.origem ?? 'manual',
       criadoEm: editar?.criadoEm ?? hoje(),
       serieId: editar?.serieId,
@@ -135,8 +142,25 @@ export function FormLancamento({ tipoInicial, editar, aoFechar }: { tipoInicial:
           {tipo === 'entrada' ? 'Já foi recebido' : 'Já foi pago'}
           <small>{pago ? 'Entra no saldo real agora.' : 'Fica como previsto: só aparece nos alertas e na projeção.'}</small>
         </Chave>
+        {tipo === 'entrada' && (
+          <div className="grade-2">
+            <Campo rotulo="OS ou pedido (opcional)" id="f-doc" erro={erros.doc}>
+              <div className="linha-doc">
+                <select id="f-doc-tipo" value={docTipo} onChange={(e) => setDocTipo(e.target.value as typeof docTipo)} aria-label="Tipo de documento">
+                  <option value="">Nenhum</option>
+                  <option value="os">OS</option>
+                  <option value="pedido">Pedido</option>
+                </select>
+                {docTipo && <input id="f-doc" inputMode="numeric" value={docNum} onChange={(e) => setDocNum(e.target.value)} placeholder="Número" aria-label="Número da OS ou pedido" />}
+              </div>
+            </Campo>
+            <Campo rotulo="Nota fiscal nº (opcional)" id="f-nf" ajuda={docTipo && !nf ? 'Quando emitir a nota, use "Converter em NF" em A pagar e receber.' : undefined}>
+              <input id="f-nf" inputMode="numeric" value={nf} onChange={(e) => setNf(e.target.value)} placeholder="Se já foi emitida" />
+            </Campo>
+          </div>
+        )}
         <Campo rotulo="Descrição (opcional)" id="f-desc">
-          <input id="f-desc" value={descricao} onChange={(e) => setDescricao(e.target.value)} placeholder={tipo === 'entrada' ? 'Ex.: NF 2568 – Cliente X' : 'Ex.: Conta de energia'} />
+          <input id="f-desc" value={descricao} onChange={(e) => setDescricao(e.target.value)} placeholder={tipo === 'entrada' ? 'Ex.: Cliente X' : 'Ex.: Conta de energia'} />
         </Campo>
         {!editar && tipo !== 'transferencia' && (
           <div className="campo">
@@ -205,7 +229,7 @@ export function FormBaixa({ lancamento, aoFechar }: { lancamento: Lancamento; ao
     <Folha titulo={recebimento ? 'Confirmar recebimento' : 'Confirmar pagamento'} aoFechar={aoFechar} tom={lancamento.tipo}>
       <form onSubmit={confirmar} noValidate className="form">
         <p className="ajuda">
-          {lancamento.descricao || dados.categorias.find((c) => c.id === lancamento.categoriaId)?.nome}
+          {lancamento.descricao || nomeCategoria(lancamento.categoriaId, dados.categorias)}
           {' '}· previsto para {dataBR(lancamento.data)}. Ajuste o valor se teve juros ou desconto.
         </p>
         <Campo rotulo={recebimento ? 'Valor recebido (R$)' : 'Valor pago (R$)'} id="b-valor" erro={erro}>
@@ -221,6 +245,65 @@ export function FormBaixa({ lancamento, aoFechar }: { lancamento: Lancamento; ao
         </div>
         <div className="acoes-form">
           <button type="submit" className={`btn btn-grande btn-${lancamento.tipo}`}>{recebimento ? 'Confirmar recebimento' : 'Confirmar pagamento'}</button>
+        </div>
+      </form>
+    </Folha>
+  );
+}
+
+/** Converte uma OS/pedido a receber em nota fiscal: grava o número da NF e permite ajustar valor e vencimento. */
+export function FormConverterNF({ lancamento, aoFechar }: { lancamento: Lancamento; aoFechar: () => void }) {
+  const { dados, despachar } = useDados();
+  const [nf, setNf] = useState('');
+  const [valor, setValor] = useState(valorParaCampo(lancamento.valor));
+  const [data, setData] = useState(lancamento.data);
+  const [erros, setErros] = useState<Record<string, string>>({});
+  // Outras parcelas ainda previstas da mesma OS (mesma série e mesmo documento) recebem o mesmo número de nota.
+  const irmas = lancamento.serieId
+    ? dados.lancamentos.filter((l) => l.serieId === lancamento.serieId && l.id !== lancamento.id && l.status === 'previsto' && !l.nf)
+    : [];
+  const [todas, setTodas] = useState(true);
+  const doc = rotuloDocumento(lancamento);
+  function confirmar(e: React.FormEvent) {
+    e.preventDefault();
+    const v = parseValor(valor);
+    const er: Record<string, string> = {};
+    if (!nf.trim()) er.nf = 'Digite o número da nota fiscal.';
+    if (v === null || v <= 0) er.valor = 'Digite um valor maior que zero.';
+    if (!data) er.data = 'Escolha o vencimento.';
+    setErros(er);
+    if (Object.keys(er).length) return;
+    const numero = nf.trim();
+    despachar({ t: 'lancamento', lancamento: { ...lancamento, nf: numero, valor: v!, data } });
+    if (todas) irmas.forEach((l) => despachar({ t: 'lancamento', lancamento: { ...l, nf: numero } }));
+    aoFechar();
+  }
+  return (
+    <Folha titulo="Converter em nota fiscal" aoFechar={aoFechar} tom="entrada">
+      <form onSubmit={confirmar} noValidate className="form">
+        <p className="ajuda">
+          {doc}{lancamento.descricao ? ` · ${lancamento.descricao}` : ''} · {nomeCategoria(lancamento.categoriaId, dados.categorias)}.
+          {' '}A OS/pedido continua guardada junto com a nota, e dá para buscar por qualquer um dos dois números.
+        </p>
+        <Campo rotulo="Número da nota fiscal" id="nf-num" erro={erros.nf}>
+          <input id="nf-num" inputMode="numeric" value={nf} onChange={(e) => setNf(e.target.value)} autoFocus />
+        </Campo>
+        <div className="grade-2">
+          <Campo rotulo="Valor da nota (R$)" id="nf-valor" erro={erros.valor}>
+            <input id="nf-valor" inputMode="decimal" value={valor} onChange={(e) => setValor(e.target.value)} />
+          </Campo>
+          <Campo rotulo="Vencimento" id="nf-data" erro={erros.data}>
+            <input id="nf-data" type="date" value={data} onChange={(e) => setData(e.target.value)} />
+          </Campo>
+        </div>
+        {irmas.length > 0 && (
+          <Chave id="nf-todas" ligada={todas} aoMudar={setTodas}>
+            Mesma nota nas outras {irmas.length} parcelas
+            <small>{todas ? 'O número da nota vai para todas as parcelas em aberto. Valor e vencimento mudam só nesta.' : 'Só esta parcela recebe o número da nota.'}</small>
+          </Chave>
+        )}
+        <div className="acoes-form">
+          <button type="submit" className="btn btn-grande btn-entrada">Converter</button>
         </div>
       </form>
     </Folha>

@@ -1,3 +1,5 @@
+import { nomeCategoria, rotuloDocumento } from '../lib/categorias';
+import { FormConverterNF } from '../components/FormLancamento';
 import { useState } from 'react';
 import type { Lancamento } from '../types';
 import { useDados } from '../data/store';
@@ -15,6 +17,7 @@ export function Agenda({ baixa, editar }: { baixa: (l: Lancamento) => void; edit
   const [aba, setAba] = useState<Aba>(atrasados.length ? 'atrasados' : '7');
   const [mes, setMes] = useState(mesDe(h));
   const [diasProj, setDiasProj] = useState<'30' | '60' | '90'>('30');
+  const [converter, setConverter] = useState<Lancamento | null>(null);
 
   const lista =
     aba === 'atrasados' ? atrasados
@@ -31,7 +34,7 @@ export function Agenda({ baixa, editar }: { baixa: (l: Lancamento) => void; edit
   const nomeCat = (l: Lancamento) =>
     l.tipo === 'transferencia'
       ? `Transferência para ${dados.contas.find((c) => c.id === l.contaDestinoId)?.nome ?? '—'}`
-      : dados.categorias.find((c) => c.id === l.categoriaId)?.nome ?? 'Sem categoria';
+      : nomeCategoria(l.categoriaId, dados.categorias) || 'Sem categoria';
   const nomeConta = (id: string) => dados.contas.find((c) => c.id === id)?.nome ?? '—';
 
   return (
@@ -98,8 +101,12 @@ export function Agenda({ baixa, editar }: { baixa: (l: Lancamento) => void; edit
                     <span className="lanc-meta">
                       {l.descricao ? `${nomeCat(l)} · ` : ''}{nomeConta(l.contaId)}
                       {l.parcela && ` · ${l.parcela.n}/${l.parcela.total}`}
+                      {rotuloDocumento(l) && ` · ${rotuloDocumento(l)}`}
                     </span>
                   </button>
+                  {l.tipo === 'entrada' && l.documento && !l.nf && (
+                    <button type="button" className="btn btn-link btn-nf" onClick={() => setConverter(l)}>Converter em NF</button>
+                  )}
                   <Valor v={l.tipo === 'entrada' ? l.valor : l.tipo === 'saida' ? -l.valor : 0} sinal classe="lanc-valor" />
                   <button type="button" className={`btn btn-baixa btn-baixa-${l.tipo}`} onClick={() => baixa(l)}>
                     {l.tipo === 'entrada' ? 'Recebi' : l.tipo === 'saida' ? 'Paguei' : 'Feito'}
@@ -112,6 +119,7 @@ export function Agenda({ baixa, editar }: { baixa: (l: Lancamento) => void; edit
       )}
       {aba !== 'mes' && aba !== 'atrasados' && lista.length > 0 && <p className="ajuda centro">Até {dataBR(aba === 'hoje' ? h : somaDias(h, Number(aba)))}</p>}
       </>}
+      {converter && <FormConverterNF lancamento={converter} aoFechar={() => setConverter(null)} />}
     </div>
   );
 }

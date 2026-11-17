@@ -1,3 +1,4 @@
+import { nomeCategoria } from '../lib/categorias';
 import { useState } from 'react';
 import type { TipoLancamento } from '../types';
 import { useDados } from '../data/store';
@@ -89,7 +90,7 @@ export function Painel({ novo, ir }: { novo: (t: TipoLancamento) => void; ir: (r
             <ul className="mini-lista">
               {deHoje.slice(0, 4).map((l) => (
                 <li key={l.id}>
-                  <span>{l.descricao || dados.categorias.find((x) => x.id === l.categoriaId)?.nome || 'Transferência'}</span>
+                  <span>{l.descricao || nomeCategoria(l.categoriaId, dados.categorias) || 'Transferência'}</span>
                   <Valor v={l.tipo === 'entrada' ? l.valor : -l.valor} sinal />
                 </li>
               ))}

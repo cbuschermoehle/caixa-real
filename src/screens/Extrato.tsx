@@ -1,8 +1,9 @@
+import { emArvore, nomeCategoria, rotuloDocumento } from '../lib/categorias';
 import { useMemo, useState } from 'react';
 import type { Dados, Importacao, Lancamento, Regra, TransacaoExtrato } from '../types';
 import { useDados } from '../data/store';
 import { BLOCOS } from '../data/planos';
-import { aprender, confirmarDividida, confirmarLinha, regraPara, sentidoDe, vinculoPara, type Escolha } from '../lib/conciliar';
+import { aprender, confirmarDividida, confirmarLinha, diferencaDaBaixa, previstosParaBaixa, regraPara, sentidoDe, vinculoPara, type Escolha } from '../lib/conciliar';
 import {
   adivinharMapeamento, aplicarMapeamento, assinatura, decodificar, marcarRepetidas, formatoDoArquivo, lerCSV, lerOFX, lerXLSX,
   type LinhaExtrato, type Mapeamento,
@@ -58,11 +59,17 @@ export function Extrato() {
   const prontas = pendentes.filter((t) => escolhaDe(t));
 
   function confirmar(lista: TransacaoExtrato[]) {
-    const itens: { transacao: TransacaoExtrato; lancamento?: Lancamento }[] = [];
+    const itens: { transacao: TransacaoExtrato; lancamento?: Lancamento; extras?: Lancamento[] }[] = [];
     const regras: Regra[] = [];
+    const usados = new Set<string>();
     for (const t of lista) {
       const e = escolhaDe(t);
       if (!e) continue;
+      // O mesmo previsto não pode dar baixa em duas linhas do extrato.
+      if (e.tipo === 'vinculo') {
+        if (usados.has(e.lancamentoId)) continue;
+        usados.add(e.lancamentoId);
+      }
       const r = confirmarLinha(dados, t, e);
       if (!r) continue;
       itens.push(r);
@@ -133,18 +140,30 @@ export function Extrato() {
                           {sug?.vinculo && (
                             <optgroup label="Já está lançado">
                               <option value={`v:${sug.vinculo.id}`}>
-                                {sug.vinculo.status === 'previsto' ? 'Dar baixa no previsto' : 'É o lançamento'}: {sug.vinculo.descricao || dados.categorias.find((c) => c.id === sug.vinculo!.categoriaId)?.nome || 'transferência'} ({dataCurta(sug.vinculo.data)})
+                                {sug.vinculo.status === 'previsto' ? 'Dar baixa no previsto' : 'É o lançamento'}: {sug.vinculo.descricao || nomeCategoria(sug.vinculo.categoriaId, dados.categorias) || 'transferência'} ({dataCurta(sug.vinculo.data)})
                               </option>
                             </optgroup>
                           )}
                           {BLOCOS.map((b) => {
-                            const cs = dados.categorias.filter((c) => c.bloco === b.id && c.sentido === sentido && !c.oculta).sort((a, z) => a.ordem - z.ordem);
+                            const cs = emArvore(dados.categorias.filter((c) => c.bloco === b.id && c.sentido === sentido), dados.categorias);
                             return cs.length ? (
                               <optgroup key={b.id} label={b.nome}>
-                                {cs.map((c) => <option key={c.id} value={`c:${c.id}`}>{c.nome}</option>)}
+                                {cs.map(({ c, nivel }) => <option key={c.id} value={`c:${c.id}`}>{nivel ? `\u00a0\u00a0\u00a0↳ ${c.nome}` : c.nome}</option>)}
                               </optgroup>
                             ) : null;
                           })}
+                          {(() => {
+                            const outros = previstosParaBaixa(dados, t, new Set(sug?.vinculo ? [sug.vinculo.id] : []));
+                            return outros.length ? (
+                              <optgroup label={sentido === 'saida' ? 'Dar baixa em conta a pagar' : 'Dar baixa em conta a receber'}>
+                                {outros.map((l) => (
+                                  <option key={l.id} value={`v:${l.id}`}>
+                                    {dataCurta(l.data)} · {[l.descricao || nomeCategoria(l.categoriaId, dados.categorias), rotuloDocumento(l)].filter(Boolean).join(' · ')} · {brl(l.valor)}
+                                  </option>
+                                ))}
+                              </optgroup>
+                            ) : null;
+                          })()}
                           <optgroup label="Entre minhas contas">
                             {dados.contas.filter((c) => c.id !== t.contaId && !c.arquivada).map((c) => (
                               <option key={c.id} value={`t:${c.id}`}>⇄ Transferência {sentido === 'saida' ? 'para' : 'de'} {c.nome}</option>
@@ -155,6 +174,23 @@ export function Extrato() {
                         <button type="button" className="btn btn-icone-borda" onClick={() => setDividir(t)} aria-label="Dividir em várias categorias" title="Dividir em várias categorias"><Icone nome="dividir" tamanho={18} /></button>
                         <button type="button" className="btn btn-icone-borda" onClick={() => ignorar(t)} aria-label="Ignorar esta linha"><Icone nome="x" tamanho={18} /></button>
                       </div>
+                      {(() => {
+                        if (escolha?.tipo !== 'vinculo') return null;
+                        const l = dados.lancamentos.find((x) => x.id === escolha.lancamentoId);
+                        const d = l && diferencaDaBaixa(dados, l, Math.abs(t.valor));
+                        if (!l || !d) return null;
+                        return (
+                          <p className="inbox-nota">
+                            <span className="selo selo-previsto">
+                              {d.tipo === 'juros'
+                                ? `Previsto de ${brl(l.valor)}. A diferença de ${brl(d.valor)} vai para "${d.nomeCategoria}".`
+                                : Math.abs(t.valor) < l.valor
+                                  ? `Previsto de ${brl(l.valor)}. Fica com o valor do banco (desconto de ${brl(d.valor)}).`
+                                  : `Previsto de ${brl(l.valor)}. Fica com o valor do banco.`}
+                            </span>
+                          </p>
+                        );
+                      })()}
                       {(!mudou && sug?.motivo) || antes || !conta ? (
                         <p className="inbox-nota">
                           {!conta && <span>{contas.get(t.contaId)?.nome}</span>}

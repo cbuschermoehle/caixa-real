@@ -1,10 +1,11 @@
-import { useState, type ReactNode } from 'react';
+import { Fragment, useState, type ReactNode } from 'react';
 import type { Bloco } from '../types';
 import { useDados } from '../data/store';
 import { BLOCOS } from '../data/planos';
 import { cascata, pontoEquilibrio, saldos } from '../lib/calc';
 import { brl, dataBR, hoje, mesDe, nomeMes, somaDias, somaMesesMes } from '../lib/format';
 import { Chave, Icone } from '../components/ui';
+import { FechamentoPDF, imprimirFechamento } from '../components/FechamentoPDF';
 
 export function Relatorio() {
   const { dados } = useDados();
@@ -59,10 +60,18 @@ export function Relatorio() {
         {aberto &&
           (t.linhas.length ? (
             t.linhas.map((l) => (
-              <tr key={l.categoria.id} className="linha-cat">
-                <th scope="row">{l.categoria.nome}</th>
-                {colunas(l.realizado, l.previsto)}
-              </tr>
+              <Fragment key={l.categoria.id}>
+                <tr className="linha-cat">
+                  <th scope="row">{l.categoria.nome}</th>
+                  {colunas(l.realizado, l.previsto)}
+                </tr>
+                {l.subs?.map((x) => (
+                  <tr key={x.categoria.id + x.categoria.nome} className="linha-cat linha-sub">
+                    <th scope="row">↳ {x.categoria.nome}</th>
+                    {colunas(x.realizado, x.previsto)}
+                  </tr>
+                ))}
+              </Fragment>
             ))
           ) : (
             <tr className="linha-cat"><th scope="row" colSpan={comPrevistos ? 5 : 3} className="apagado">Nada lançado neste bloco.</th></tr>
@@ -82,6 +91,9 @@ export function Relatorio() {
     <div className="tela">
       <header className="tela-topo">
         <h1>Relatório do mês</h1>
+        <button type="button" className="btn" onClick={() => imprimirFechamento(`Fechamento ${nomeMes(mes)} - ${dados.empresa?.nome ?? ''}`)}>
+          <Icone nome="relatorio" tamanho={18} /> Baixar PDF
+        </button>
         <div className="seletor-mes">
           <button type="button" className="btn-icone" onClick={() => setMes(somaMesesMes(mes, -1))} aria-label="Mês anterior"><Icone nome="voltar" /></button>
           <strong>{nomeMes(mes)}</strong>
@@ -117,6 +129,9 @@ export function Relatorio() {
           </tbody>
         </table>
       </div>
+
+      <p className="ajuda">O PDF traz este resumo com todas as categorias abertas e a lista de todas as movimentações do mês{comPrevistos ? ', incluindo os previstos' : ''}. Na janela que abrir, escolha "Salvar como PDF".</p>
+      <FechamentoPDF dados={dados} mes={mes} comPrevistos={comPrevistos} />
 
       <div className="grade-painel">
         <section className="cartao">

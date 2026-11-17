@@ -1,3 +1,4 @@
+import { nomeCategoria, raiz } from './categorias';
 import type { Bloco, Categoria, Conta, Dados, Lancamento } from '../types';
 import { diasEntre, mesDe, somaDias, ultimoDiaDoMes } from './format';
 
@@ -100,6 +101,8 @@ export interface LinhaCategoria {
   categoria: Categoria;
   realizado: number;
   previsto: number;
+  /** Detalhe por subcategoria (a soma já está na linha). "Sem subcategoria" = lançado direto na mãe. */
+  subs?: LinhaCategoria[];
 }
 
 export interface TotalBloco {
@@ -128,25 +131,36 @@ export function cascata(dados: Dados, mes: string): Cascata {
     (b) => (blocos[b] = { bloco: b, realizado: 0, previsto: 0, linhas: [] }),
   );
   const linhas = new Map<string, LinhaCategoria>();
+  const subLinhas = new Map<string, LinhaCategoria>();
   for (const l of dados.lancamentos) {
     if (l.tipo === 'transferencia' || mesDe(l.data) !== mes || !l.categoriaId) continue;
-    const cat = cats.get(l.categoriaId);
-    if (!cat) continue;
+    const propria = cats.get(l.categoriaId);
+    if (!propria) continue;
+    // Subcategoria soma dentro da categoria mãe.
+    const cat = raiz(propria, cats);
     // Entradas e "outras" mantêm o sinal; os blocos de gasto somam valores positivos.
     const v = cat.bloco === 'outras' ? sinal(l) * l.valor : l.valor;
     let linha = linhas.get(cat.id);
     if (!linha) {
-      linha = { categoria: cat, realizado: 0, previsto: 0 };
+      linha = { categoria: cat, realizado: 0, previsto: 0, subs: [] };
       linhas.set(cat.id, linha);
       blocos[cat.bloco].linhas.push(linha);
     }
-    if (l.status === 'pago') {
-      linha.realizado += v;
-      blocos[cat.bloco].realizado += v;
-    } else {
-      linha.previsto += v;
-      blocos[cat.bloco].previsto += v;
+    let sub = subLinhas.get(propria.id);
+    if (!sub) {
+      sub = { categoria: propria === cat ? { ...cat, nome: 'Sem subcategoria', ordem: -1 } : propria, realizado: 0, previsto: 0 };
+      subLinhas.set(propria.id, sub);
+      linha.subs!.push(sub);
     }
+    const k = l.status === 'pago' ? 'realizado' : 'previsto';
+    linha[k] += v;
+    sub[k] += v;
+    blocos[cat.bloco][k] += v;
+  }
+  // Só mostra o detalhe quando existe ao menos uma subcategoria de verdade.
+  for (const linha of linhas.values()) {
+    if (!linha.subs!.some((x) => x.categoria.id !== linha.categoria.id)) delete linha.subs;
+    else linha.subs!.sort((a, z) => a.categoria.ordem - z.categoria.ordem);
   }
   Object.values(blocos).forEach((b) => b.linhas.sort((a, z) => a.categoria.ordem - z.categoria.ordem));
   const r = (k: 'realizado' | 'previsto') => {
@@ -307,8 +321,8 @@ export function longoPrazo(dados: Dados, ref: string) {
     const ult = ls[ls.length - 1];
     lista.push({
       serieId,
-      nome: ls[0].descricao || cats.get(ls[0].categoriaId ?? '')?.nome || 'Sem descrição',
-      categoria: cats.get(ls[0].categoriaId ?? '')?.nome ?? '',
+      nome: ls[0].descricao || nomeCategoria(ls[0].categoriaId, cats) || 'Sem descrição',
+      categoria: nomeCategoria(ls[0].categoriaId, cats),
       tipo: ls[0].tipo as 'entrada' | 'saida',
       restantes: ls.length,
       total: ult.parcela?.total,

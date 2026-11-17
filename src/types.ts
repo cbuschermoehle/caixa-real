@@ -38,6 +38,14 @@ export interface Categoria {
   grupo?: string;
   oculta: boolean;
   ordem: number;
+  /** Subcategoria: id da categoria "mãe" (mesmo bloco e sentido). No relatório soma dentro da mãe. */
+  paiId?: string;
+}
+
+/** Documento de origem de uma conta a receber (OS ou pedido), antes de virar nota fiscal. */
+export interface Documento {
+  tipo: 'os' | 'pedido';
+  numero: string;
 }
 
 export interface Lancamento {
@@ -58,6 +66,10 @@ export interface Lancamento {
   criadoEm: string;
   /** Linha do extrato que confirmou este lançamento (conciliado). */
   extratoId?: string;
+  /** OS ou pedido que originou a conta a receber. */
+  documento?: Documento;
+  /** Número da nota fiscal (numeração própria, diferente da OS/pedido). */
+  nf?: string;
 }
 
 export type SituacaoExtrato = 'pendente' | 'confirmada' | 'ignorada';

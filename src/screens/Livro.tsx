@@ -1,3 +1,4 @@
+import { comSubs, emArvore, nomeCategoria, rotuloDocumento } from '../lib/categorias';
 import { useMemo, useState } from 'react';
 import type { Lancamento } from '../types';
 import { useDados } from '../data/store';
@@ -18,15 +19,16 @@ export function Livro({ editar, ir }: { editar: (l: Lancamento) => void; ir: (r:
   const cats = useMemo(() => new Map(dados.categorias.map((c) => [c.id, c])), [dados.categorias]);
   const contas = useMemo(() => new Map(dados.contas.map((c) => [c.id, c])), [dados.contas]);
 
+  const filtroCat = categoria && !categoria.startsWith('bloco:') ? comSubs(categoria, dados.categorias) : null;
   const lista = dados.lancamentos
     .filter((l) => mesDe(l.data) === mes)
     .filter((l) => !conta || l.contaId === conta || l.contaDestinoId === conta)
-    .filter((l) => !categoria || (categoria.startsWith('bloco:') ? cats.get(l.categoriaId ?? '')?.bloco === categoria.slice(6) : l.categoriaId === categoria))
+    .filter((l) => !categoria || (filtroCat ? filtroCat.has(l.categoriaId ?? '') : cats.get(l.categoriaId ?? '')?.bloco === categoria.slice(6)))
     .filter((l) => !status || l.status === status)
     .filter((l) => {
       if (!busca.trim()) return true;
       const q = busca.toLowerCase();
-      return (l.descricao ?? '').toLowerCase().includes(q) || (cats.get(l.categoriaId ?? '')?.nome ?? '').toLowerCase().includes(q);
+      return (l.descricao ?? '').toLowerCase().includes(q) || nomeCategoria(l.categoriaId, cats).toLowerCase().includes(q) || rotuloDocumento(l).toLowerCase().includes(q);
     })
     .sort((a, b) => b.data.localeCompare(a.data) || b.criadoEm.localeCompare(a.criadoEm));
 
@@ -43,7 +45,7 @@ export function Livro({ editar, ir }: { editar: (l: Lancamento) => void; ir: (r:
   const titulo = (l: Lancamento) =>
     l.tipo === 'transferencia'
       ? `${contas.get(l.contaId)?.nome ?? '—'} → ${contas.get(l.contaDestinoId ?? '')?.nome ?? '—'}`
-      : cats.get(l.categoriaId ?? '')?.nome ?? 'Sem categoria';
+      : nomeCategoria(l.categoriaId, cats) || 'Sem categoria';
   const filtrando = conta || categoria || status || busca;
 
   return (
@@ -63,7 +65,7 @@ export function Livro({ editar, ir }: { editar: (l: Lancamento) => void; ir: (r:
       <div className="filtros">
         <label className="busca">
           <Icone nome="busca" tamanho={18} />
-          <input id="l-busca" type="search" placeholder="Buscar descrição ou categoria" value={busca} onChange={(e) => setBusca(e.target.value)} aria-label="Buscar" />
+          <input id="l-busca" type="search" placeholder="Buscar descrição, categoria, OS ou NF" value={busca} onChange={(e) => setBusca(e.target.value)} aria-label="Buscar" />
         </label>
         <select id="l-conta" value={conta} onChange={(e) => setConta(e.target.value)} aria-label="Filtrar por conta">
           <option value="">Todas as contas</option>
@@ -74,7 +76,7 @@ export function Livro({ editar, ir }: { editar: (l: Lancamento) => void; ir: (r:
           {BLOCOS.map((b) => (
             <optgroup key={b.id} label={b.nome}>
               <option value={`bloco:${b.id}`}>Todo o bloco {b.nome}</option>
-              {dados.categorias.filter((c) => c.bloco === b.id).sort((a, z) => a.ordem - z.ordem).map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}
+              {emArvore(dados.categorias.filter((c) => c.bloco === b.id), dados.categorias, categoria).map(({ c, nivel }) => <option key={c.id} value={c.id}>{nivel ? `\u00a0\u00a0\u00a0↳ ${c.nome}` : c.nome}</option>)}
             </optgroup>
           ))}
         </select>
@@ -108,6 +110,7 @@ export function Livro({ editar, ir }: { editar: (l: Lancamento) => void; ir: (r:
                       {l.descricao ? `${titulo(l)} · ` : ''}
                       {l.tipo !== 'transferencia' && (contas.get(l.contaId)?.nome ?? '—')}
                       {l.parcela && ` · ${l.parcela.n}/${l.parcela.total}`}
+                      {rotuloDocumento(l) && ` · ${rotuloDocumento(l)}`}
                     </span>
                   </button>
                   {l.status === 'previsto' && <span className={`selo ${data < h ? 'selo-atraso' : 'selo-previsto'}`}>{data < h ? 'Atrasado' : 'Previsto'}</span>}

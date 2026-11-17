@@ -1,3 +1,4 @@
+import { emArvore } from '../lib/categorias';
 import { useEffect, useRef, type ReactNode } from 'react';
 import type { Categoria, Conta, Sentido } from '../types';
 import { BLOCOS } from '../data/planos';
@@ -63,14 +64,12 @@ export function SeletorCategoria({ id, valor, aoMudar, categorias, sentido }: { 
     <select id={id} value={valor} onChange={(e) => aoMudar(e.target.value)}>
       <option value="">Escolha a categoria</option>
       {BLOCOS.map((b) => {
-        const lista = categorias
-          .filter((c) => c.bloco === b.id && c.sentido === sentido && (!c.oculta || c.id === valor))
-          .sort((a, z) => a.ordem - z.ordem);
+        const lista = emArvore(categorias.filter((c) => c.bloco === b.id && c.sentido === sentido), categorias, valor);
         if (!lista.length) return null;
         return (
           <optgroup key={b.id} label={b.nome}>
-            {lista.map((c) => (
-              <option key={c.id} value={c.id}>{c.nome}</option>
+            {lista.map(({ c, nivel }) => (
+              <option key={c.id} value={c.id}>{nivel ? `\u00a0\u00a0\u00a0↳ ${c.nome}` : c.nome}</option>
             ))}
           </optgroup>
         );

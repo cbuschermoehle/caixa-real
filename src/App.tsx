@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { Lancamento, Pendente, TipoLancamento } from './types';
+import type { Lancamento, TipoLancamento } from './types';
 import { useDados } from './data/store';
-import { FormBaixa, FormLancamento } from './components/FormLancamento';
+import { FormBaixa, FormLancamento, type InicialForm } from './components/FormLancamento';
 import { Icone } from './components/ui';
 import { Onboarding } from './screens/Onboarding';
 import { Painel } from './screens/Painel';
@@ -36,7 +36,7 @@ const rotaDoHash = (): Rota => {
 export function App() {
   const { dados, despachar } = useDados();
   const [rota, setRota] = useState<Rota>(rotaDoHash);
-  const [form, setForm] = useState<{ tipo: TipoLancamento; editar?: Lancamento; pendente?: Pendente } | null>(null);
+  const [form, setForm] = useState<{ tipo: TipoLancamento; editar?: Lancamento; inicial?: InicialForm; pendenteId?: string } | null>(null);
   const [rapido, setRapido] = useState(false);
   const [verPendentes, setVerPendentes] = useState(false);
   const [baixa, setBaixa] = useState<Lancamento | null>(null);
@@ -83,7 +83,7 @@ export function App() {
       </header>
 
       <main className="conteudo">
-        {rotaAtual === 'painel' && <Painel novo={novo} ir={ir} rapido={() => setRapido(true)} pendentes={() => setVerPendentes(true)} />}
+        {rotaAtual === 'painel' && <Painel novo={novo} ir={ir} rapido={() => setRapido(true)} pendentes={() => setVerPendentes(true)} lancar={(inicial) => setForm({ tipo: 'saida', inicial })} />}
         {rotaAtual === 'futuro' && <Futuro ir={ir} />}
         {rotaAtual === 'patrimonio' && <Patrimonio ir={ir} />}
         {rotaAtual === 'lancamentos' && <Livro editar={editar} ir={ir} />}
@@ -108,16 +108,16 @@ export function App() {
 
       {form && (
         <FormLancamento
-          key={form.editar?.id ?? form.pendente?.id ?? form.tipo}
+          key={form.editar?.id ?? form.pendenteId ?? form.inicial?.categoriaId ?? form.tipo}
           tipoInicial={form.tipo}
           editar={form.editar}
-          inicial={form.pendente}
-          aoSalvar={form.pendente ? () => despachar({ t: 'excluirPendente', id: form.pendente!.id }) : undefined}
+          inicial={form.inicial}
+          aoSalvar={form.pendenteId ? () => despachar({ t: 'excluirPendente', id: form.pendenteId! }) : undefined}
           aoFechar={fecharForm}
         />
       )}
       {rapido && <FormRapido aoFechar={() => setRapido(false)} />}
-      {verPendentes && !form && <ListaPendentes aoFechar={() => setVerPendentes(false)} completar={(p) => setForm({ tipo: 'saida', pendente: p })} />}
+      {verPendentes && !form && <ListaPendentes aoFechar={() => setVerPendentes(false)} completar={(p) => setForm({ tipo: 'saida', pendenteId: p.id, inicial: { valor: p.valor, data: p.data, descricao: p.descricao, foto: p.foto } })} />}
       {baixa && <FormBaixa lancamento={baixa} aoFechar={fecharBaixa} />}
     </div>
   );

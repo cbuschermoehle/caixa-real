@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type
 import type { Dados } from './types';
 import { ProvedorDados, vazio } from './data/store';
 import { SessaoCtx, type EstadoNuvem } from './data/sessao';
-import { baixar, criarConta, entrar, enviar, recuperarSenha, sair, supabase, trocarSenha, type Session } from './data/nuvem';
+import { baixar, criarConta, entrar, enviar, recuperarSenha, sair, servicoFotos, supabase, trocarSenha, type Session } from './data/nuvem';
 import { Campo } from './components/ui';
 import { App } from './App';
 
@@ -123,7 +123,8 @@ function Conectado({ usuario, email }: { usuario: string; email: string }) {
     };
   }, [descarregar, usuario]);
 
-  const valor = useMemo(() => ({ email, estado, sair: () => void sair() }), [email, estado]);
+  const fotos = useMemo(() => servicoFotos(usuario), [usuario]);
+  const valor = useMemo(() => ({ email, estado, sair: () => void sair(), fotos }), [email, estado, fotos]);
 
   if (erro && !carga) {
     return (

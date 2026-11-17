@@ -9,8 +9,10 @@ import { fechamentoDaFatura, resumoCartao, vencimentoDaFatura, type ResumoCartao
 import { brl, dataBR, dataEixo, hoje, mesCurto, mesDe, nomeMes, somaDias } from '../lib/format';
 import { BarrasEntradaSaida } from '../components/graficos';
 import { BarraComprometida, Icone, Segmentos, Valor } from '../components/ui';
+import { AvisosPessoal } from '../components/Avisos';
+import type { InicialForm } from '../components/FormLancamento';
 
-export function Painel({ novo, ir, rapido, pendentes }: { novo: (t: TipoLancamento) => void; ir: (rota: string) => void; rapido: () => void; pendentes: () => void }) {
+export function Painel({ novo, ir, rapido, pendentes, lancar }: { novo: (t: TipoLancamento) => void; ir: (rota: string) => void; rapido: () => void; pendentes: () => void; lancar: (inicial: InicialForm) => void }) {
   const { dados } = useDados();
   const [verContas, setVerContas] = useState(false);
   const [periodo, setPeriodo] = useState<'dias' | 'semanas' | 'meses'>('dias');
@@ -74,6 +76,8 @@ export function Painel({ novo, ir, rapido, pendentes }: { novo: (t: TipoLancamen
           <Icone nome="seta" tamanho={16} />
         </button>
       )}
+
+      {pessoal && <AvisosPessoal lancar={lancar} />}
 
       <button type="button" className="faixa-extrato" onClick={() => ir('extrato')}>
         <Icone nome="banco" />

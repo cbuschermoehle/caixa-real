@@ -34,6 +34,8 @@ export type Acao =
   | { t: 'avaliar'; avaliacoes: Avaliacao[] }
   | { t: 'bem'; bem: Bem }
   | { t: 'excluirBem'; id: string }
+  | { t: 'ignorarRepasse'; id: string }
+  | { t: 'lembreteVisto'; chave: string }
   | { t: 'zerar' };
 
 /** Ações sobre o conjunto de perfis (empresa e pessoal) da mesma conta. */
@@ -126,6 +128,10 @@ export function reducer(d: Dados, a: Acao): Dados {
       return { ...d, bens: upsert(d.bens ?? [], a.bem) };
     case 'excluirBem':
       return { ...d, bens: (d.bens ?? []).filter((b) => b.id !== a.id) };
+    case 'ignorarRepasse':
+      return { ...d, repassesIgnorados: [...new Set([...(d.repassesIgnorados ?? []), a.id])] };
+    case 'lembreteVisto':
+      return { ...d, lembretesVistos: [...new Set([...(d.lembretesVistos ?? []), a.chave])] };
     case 'zerar':
       return vazio;
   }

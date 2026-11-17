@@ -175,6 +175,8 @@ export function dadosPessoaisDeExemplo(ref = hoje()) {
     }
   };
   parcelado(somaDias(ref, -62), 10, 38_000, 'Seguro do carro', 'Seguro do carro');
+  // IPVA pago há quase um ano: o Painel lembra da renovação.
+  add('saida', somaDias(ref, -345), 320_000, 'IPVA e licenciamento', 'IPVA do carro');
   parcelado(somaDias(ref, -10), 6, 54_900, 'Casa e manutenção', 'TV nova');
 
   // Faturas: cria os pagamentos previstos e dá como pagas as que já venceram.

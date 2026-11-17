@@ -484,3 +484,7 @@ input:focus, select:focus { border-color: var(--acento); outline: 2px solid colo
 .btn-nf { white-space: nowrap; font-size: 0.85rem; padding-inline: 6px; }
 @media (max-width: 600px) { .lista-lanc li:has(.btn-nf) { flex-wrap: wrap; } .btn-nf { order: 5; flex-basis: 100%; text-align: left; justify-content: flex-start; padding: 4px 0 0; } }
 .grupo-dia h3 { font-size: 0.98rem; font-weight: 800; color: var(--tinta); letter-spacing: 0.03em; padding: 4px 0 4px 10px; border-left: 4px solid var(--acento); margin-top: 8px; }
+.lista-parcelas { display: grid; gap: 6px; margin-top: 8px; }
+.linha-parcela { display: grid; grid-template-columns: 2.2em 1fr 1fr; gap: 6px; align-items: center; }
+.linha-parcela input { min-width: 0; }
+.num-parcela { font-weight: 700; color: var(--tinta-2); font-variant-numeric: tabular-nums; }

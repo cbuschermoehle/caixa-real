@@ -2,7 +2,7 @@ import { useState } from 'react';
 import type { Documento, Lancamento, TipoLancamento } from '../types';
 import { useDados } from '../data/store';
 import { nomeCategoria, rotuloDocumento } from '../lib/categorias';
-import { dataBR, hoje, novoId, parseValor, somaMeses, valorParaCampo } from '../lib/format';
+import { brl, dataBR, hoje, novoId, parseValor, somaMeses, valorParaCampo } from '../lib/format';
 import { Campo, Chave, Confirmar, Folha, Segmentos, SeletorCategoria, SeletorConta } from './ui';
 
 type Repeticao = 'nao' | 'mensal' | 'parcelado';
@@ -26,8 +26,24 @@ export function FormLancamento({ tipoInicial, editar, aoFechar }: { tipoInicial:
   const [nf, setNf] = useState(editar?.nf ?? '');
   const [repeticao, setRepeticao] = useState<Repeticao>('nao');
   const [vezes, setVezes] = useState('12');
+  // Parcelas com valor e vencimento próprios (nota parcelada em valores ou datas diferentes).
+  const [ajustar, setAjustar] = useState(false);
+  const [parcelas, setParcelas] = useState<{ data: string; valor: string }[]>([]);
   const [erros, setErros] = useState<Record<string, string>>({});
   const [confirmarExclusao, setConfirmarExclusao] = useState(false);
+
+  /** Monta (ou estica/encurta) a lista de parcelas, mantendo o que já foi digitado. */
+  const montarParcelas = (qtd: number, lista = parcelas) => {
+    if (!Number.isInteger(qtd) || qtd < 2 || qtd > 240) return lista;
+    return Array.from({ length: qtd }, (_, i) => lista[i] ?? { data: somaMeses(data, i), valor });
+  };
+  const ligarAjuste = (v: boolean) => {
+    setAjustar(v);
+    if (v) setParcelas(montarParcelas(Number(vezes), []));
+  };
+  const somaParcelas = parcelas.reduce((a, p) => a + (parseValor(p.valor) ?? 0), 0);
+  const mudarParcela = (i: number, campo: 'data' | 'valor', v: string) =>
+    setParcelas((ps) => ps.map((p, j) => (j === i ? { ...p, [campo]: v } : p)));
 
   const mudarData = (d: string) => {
     setData(d);
@@ -52,6 +68,13 @@ export function FormLancamento({ tipoInicial, editar, aoFechar }: { tipoInicial:
     if (tipo === 'entrada' && docTipo && !docNum.trim()) er.doc = 'Digite o número da OS ou do pedido.';
     const n = Number(vezes);
     if (repeticao !== 'nao' && (!Number.isInteger(n) || n < 2 || n > 240)) er.vezes = 'Use de 2 a 240 vezes (20 anos).';
+    const usarParcelas = repeticao === 'parcelado' && ajustar;
+    const valoresParcelas = usarParcelas ? parcelas.map((p) => parseValor(p.valor)) : [];
+    if (usarParcelas) {
+      if (valoresParcelas.some((x) => x === null || x <= 0)) er.parcelas = 'Cada parcela precisa de um valor maior que zero.';
+      else if (parcelas.some((p) => !p.data)) er.parcelas = 'Cada parcela precisa de uma data de vencimento.';
+      if (er.valor && !valoresParcelas.some((x) => x === null || x <= 0)) delete er.valor;
+    }
     setErros(er);
     if (Object.keys(er).length) return;
 
@@ -77,9 +100,10 @@ export function FormLancamento({ tipoInicial, editar, aoFechar }: { tipoInicial:
     } else {
       const serieId = novoId();
       const lista: Lancamento[] = Array.from({ length: n }, (_, i) => {
-        const d = somaMeses(data, i);
+        const d = usarParcelas ? parcelas[i].data : somaMeses(data, i);
         return {
           ...baseL,
+          ...(usarParcelas ? { valor: valoresParcelas[i]! } : {}),
           id: novoId(),
           data: d,
           status: i === 0 ? status : 'previsto',
@@ -112,9 +136,11 @@ export function FormLancamento({ tipoInicial, editar, aoFechar }: { tipoInicial:
             opcoes={[{ v: 'entrada', r: '+ Entrada' }, { v: 'saida', r: '− Saída' }, { v: 'transferencia', r: '⇄ Transferência' }]}
           />
         )}
-        <Campo rotulo="Valor (R$)" id="f-valor" erro={erros.valor}>
-          <input id="f-valor" className="input-valor" inputMode="decimal" autoComplete="off" placeholder="0,00" value={valor} onChange={(e) => setValor(e.target.value)} />
-        </Campo>
+        {!(repeticao === 'parcelado' && ajustar) && (
+          <Campo rotulo={repeticao === 'parcelado' ? 'Valor de cada parcela (R$)' : 'Valor (R$)'} id="f-valor" erro={erros.valor}>
+            <input id="f-valor" className="input-valor" inputMode="decimal" autoComplete="off" placeholder="0,00" value={valor} onChange={(e) => setValor(e.target.value)} />
+          </Campo>
+        )}
         <div className="grade-2">
           <Campo rotulo={tipo === 'entrada' ? 'Data do recebimento' : tipo === 'saida' ? 'Data do pagamento' : 'Data'} id="f-data" erro={erros.data}>
             <input id="f-data" type="date" value={data} onChange={(e) => mudarData(e.target.value)} />
@@ -168,17 +194,36 @@ export function FormLancamento({ tipoInicial, editar, aoFechar }: { tipoInicial:
             <Segmentos
               rotulo="Repetir"
               valor={repeticao}
-              aoMudar={(r) => { setRepeticao(r); setVezes(r === 'mensal' ? '12' : '3'); }}
+              aoMudar={(r) => { setRepeticao(r); setAjustar(false); setVezes(r === 'mensal' ? '12' : '3'); }}
               opcoes={[{ v: 'nao', r: 'Não repete' }, { v: 'mensal', r: 'Todo mês' }, { v: 'parcelado', r: 'Parcelado' }]}
             />
             {repeticao !== 'nao' && (
               <div className="linha-vezes">
                 <label htmlFor="f-vezes">{repeticao === 'mensal' ? 'Criar para os próximos' : 'Número de parcelas'}</label>
-                <input id="f-vezes" inputMode="numeric" value={vezes} onChange={(e) => setVezes(e.target.value.replace(/\D/g, ''))} />
+                <input id="f-vezes" inputMode="numeric" value={vezes} onChange={(e) => { const v = e.target.value.replace(/\D/g, ''); setVezes(v); if (ajustar) setParcelas(montarParcelas(Number(v))); }} />
                 <span>{repeticao === 'mensal' ? 'meses' : 'vezes'}</span>
               </div>
             )}
-            {erros.vezes ? <p className="erro">{erros.vezes}</p> : ultimaData && (
+            {repeticao === 'parcelado' && (
+              <Chave id="f-ajustar" ligada={ajustar} aoMudar={ligarAjuste}>
+                Parcelas com valores ou datas diferentes
+                <small>{ajustar ? 'Digite o vencimento e o valor de cada parcela.' : 'Ligue se a nota não foi dividida em partes iguais ou não vence de 30 em 30 dias.'}</small>
+              </Chave>
+            )}
+            {repeticao === 'parcelado' && ajustar && (
+              <div className="lista-parcelas">
+                {parcelas.map((p, i) => (
+                  <div key={i} className="linha-parcela">
+                    <span className="num-parcela">{i + 1}ª</span>
+                    <input id={`f-p-data-${i}`} type="date" value={p.data} onChange={(e) => mudarParcela(i, 'data', e.target.value)} aria-label={`Vencimento da parcela ${i + 1}`} />
+                    <input id={`f-p-valor-${i}`} inputMode="decimal" placeholder="0,00" value={p.valor} onChange={(e) => mudarParcela(i, 'valor', e.target.value)} aria-label={`Valor da parcela ${i + 1}`} />
+                  </div>
+                ))}
+                <p className="ajuda">Total das parcelas: <strong>{brl(somaParcelas)}</strong></p>
+                {erros.parcelas && <p className="erro">{erros.parcelas}</p>}
+              </div>
+            )}
+            {erros.vezes ? <p className="erro">{erros.vezes}</p> : !(repeticao === 'parcelado' && ajustar) && ultimaData && (
               <p className="ajuda">
                 {repeticao === 'parcelado' ? 'Cada parcela com o valor acima. ' : ''}A última fica para {dataBR(ultimaData)}. As seguintes entram como previstas.
               </p>

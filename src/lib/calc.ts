@@ -197,21 +197,6 @@ export function cascata(dados: Dados, mes: string, ref = hoje()): Cascata {
 }
 
 /**
- * Perfil pessoal: quanto da renda do mês já está preso em gastos essenciais e dívidas (pagos + previstos).
- * Faixas de referência: até 50% tranquilo, até 70% atenção, acima disso apertado.
- */
-export function rendaComprometida(c: Cascata) {
-  const soma = (b: Bloco) => c.blocos[b].realizado + c.blocos[b].previsto;
-  const renda = soma('entradas');
-  const essenciais = soma('despesas_fixas');
-  const dividas = soma('dividas');
-  const comprometido = essenciais + dividas;
-  const pct = renda > 0 ? Math.round((comprometido / renda) * 100) : null;
-  const faixa: 'ok' | 'atencao' | 'alto' | null = pct === null ? null : pct <= 50 ? 'ok' : pct <= 70 ? 'atencao' : 'alto';
-  return { renda, essenciais, dividas, comprometido, pct, faixa };
-}
-
-/**
  * Ponto de equilíbrio do mês: primeiro dia em que a margem de contribuição acumulada
  * (entradas pagas menos custos variáveis pagos) cobre as despesas fixas do mês (pagas + previstas).
  */

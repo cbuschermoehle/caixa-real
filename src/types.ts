@@ -57,6 +57,17 @@ export interface Categoria {
   ordem: number;
   /** Subcategoria: id da categoria "mãe" (mesmo bloco e sentido). No relatório soma dentro da mãe. */
   paiId?: string;
+  /** Limite de gasto por mês (centavos), opcional. */
+  limite?: number;
+}
+
+/** Gasto anotado às pressas (Lançamento rápido), esperando categoria e forma de pagamento. */
+export interface Pendente {
+  id: string;
+  valor: number;
+  data: string;
+  descricao?: string;
+  criadoEm: string;
 }
 
 /** Documento de origem de uma conta a receber (OS ou pedido), antes de virar nota fiscal. */
@@ -153,4 +164,6 @@ export interface Dados {
    * O primeiro perfil fica na raiz, assim versões antigas do app continuam abrindo a empresa.
    */
   outrosPerfis?: Dados[];
+  /** Lançamentos rápidos ainda não completados. Não mexem no saldo. */
+  pendentes?: Pendente[];
 }

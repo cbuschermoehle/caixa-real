@@ -10,6 +10,9 @@ import { TIPOS_CONTA } from './Onboarding';
 import { BaixarCopia, RestaurarCopia } from '../components/Copia';
 import { useSessao } from '../data/sessao';
 
+/** Limite por mês só faz sentido em categorias de gasto principais (não em subcategorias nem em "outras"). */
+const temLimite = (c: Categoria) => c.sentido === 'saida' && !c.paiId && c.bloco !== 'outras';
+
 export function Ajustes() {
   const { dados, despachar, perfis } = useDados();
   const blocos = blocosDe(dados.empresa);
@@ -18,7 +21,7 @@ export function Ajustes() {
   const [blocoAberto, setBlocoAberto] = useState<Bloco | null>('entradas');
   const [novaCat, setNovaCat] = useState<{ bloco: Bloco; nome: string; sentido: Sentido } | null>(null);
   const [novaSub, setNovaSub] = useState<{ pai: Categoria; nome: string } | null>(null);
-  const [renomear, setRenomear] = useState<{ id: string; nome: string } | null>(null);
+  const [renomear, setRenomear] = useState<{ id: string; nome: string; limite: string } | null>(null);
   const [zerar, setZerar] = useState(false);
   const empresa = dados.empresa!;
   const sessao = useSessao();
@@ -53,7 +56,7 @@ export function Ajustes() {
 
       <section className="cartao">
         <h2>Categorias</h2>
-        <p className="ajuda">Renomeie, esconda ou crie categorias. No botão + de uma categoria você cria subcategorias (ex.: Salários › cada funcionário); no relatório elas somam dentro da categoria. Categorias escondidas somem da lista de escolha, mas os lançamentos antigos continuam nos relatórios.</p>
+        <p className="ajuda">No lápis de uma categoria de gasto você também pode definir um limite por mês: o Painel mostra quanto já foi usado. Renomeie, esconda ou crie categorias. No botão + de uma categoria você cria subcategorias (ex.: Salários › cada funcionário); no relatório elas somam dentro da categoria. Categorias escondidas somem da lista de escolha, mas os lançamentos antigos continuam nos relatórios.</p>
         {blocos.map((b) => {
           const raizes = dados.categorias.filter((c) => c.bloco === b.id && !c.paiId).sort((a, z) => a.ordem - z.ordem);
           const lista = raizes.flatMap((r) => [r, ...dados.categorias.filter((c) => c.paiId === r.id).sort((a, z) => a.ordem - z.ordem)]);
@@ -72,8 +75,16 @@ export function Ajustes() {
                       <Fragment key={c.id}>
                       <li className={`${c.oculta ? 'apagado' : ''} ${c.paiId ? 'sub' : ''}`}>
                         {renomear?.id === c.id ? (
-                          <form className="renomear" onSubmit={(e) => { e.preventDefault(); if (renomear.nome.trim()) salvarCat({ ...c, nome: renomear.nome.trim() }); setRenomear(null); }}>
-                            <input id={`rn-${c.id}`} value={renomear.nome} onChange={(e) => setRenomear({ id: c.id, nome: e.target.value })} aria-label="Novo nome" autoFocus />
+                          <form className="renomear" onSubmit={(e) => {
+                            e.preventDefault();
+                            const lim = renomear.limite.trim() ? parseValor(renomear.limite) : 0;
+                            if (renomear.nome.trim()) salvarCat({ ...c, nome: renomear.nome.trim(), limite: lim && lim > 0 ? lim : undefined });
+                            setRenomear(null);
+                          }}>
+                            <input id={`rn-${c.id}`} value={renomear.nome} onChange={(e) => setRenomear({ ...renomear, nome: e.target.value })} aria-label="Novo nome" autoFocus />
+                            {temLimite(c) && (
+                              <input id={`rl-${c.id}`} className="input-limite" inputMode="decimal" value={renomear.limite} onChange={(e) => setRenomear({ ...renomear, limite: e.target.value })} placeholder="Limite/mês" aria-label={`Limite por mês de ${c.nome} (R$)`} />
+                            )}
                             <button type="submit" className="btn btn-primario">OK</button>
                           </form>
                         ) : (
@@ -83,8 +94,9 @@ export function Ajustes() {
                               {c.nome}
                               {b.id === 'outras' && <em className="ajuda"> · {c.sentido === 'entrada' ? 'entrada' : 'saída'}</em>}
                               {c.grupo && !c.paiId && <em className="ajuda"> · {c.grupo}</em>}
+                              {c.limite && temLimite(c) ? <em className="ajuda"> · limite {brl(c.limite)}/mês</em> : null}
                             </span>
-                            <button type="button" className="btn-icone" aria-label={`Renomear ${c.nome}`} onClick={() => setRenomear({ id: c.id, nome: c.nome })}><Icone nome="lapis" tamanho={16} /></button>
+                            <button type="button" className="btn-icone" aria-label={`Renomear ${c.nome}`} onClick={() => setRenomear({ id: c.id, nome: c.nome, limite: c.limite ? valorParaCampo(c.limite) : '' })} title={temLimite(c) ? 'Renomear ou definir limite por mês' : 'Renomear'}><Icone nome="lapis" tamanho={16} /></button>
                             <button type="button" className="btn-icone" aria-label={c.oculta ? `Mostrar ${c.nome}` : `Esconder ${c.nome}`} onClick={() => salvarCat({ ...c, oculta: !c.oculta })}>
                               <Icone nome={c.oculta ? 'olhoFechado' : 'olho'} tamanho={16} />
                             </button>

@@ -10,18 +10,26 @@ type Repeticao = 'nao' | 'mensal' | 'parcelado';
 
 const TITULOS: Record<TipoLancamento, string> = { entrada: 'Nova entrada', saida: 'Nova saída', transferencia: 'Transferência entre contas' };
 
-export function FormLancamento({ tipoInicial, editar, aoFechar }: { tipoInicial: TipoLancamento; editar?: Lancamento; aoFechar: () => void }) {
+export function FormLancamento({ tipoInicial, editar, aoFechar, inicial, aoSalvar }: {
+  tipoInicial: TipoLancamento;
+  editar?: Lancamento;
+  aoFechar: () => void;
+  /** Valores para começar (ex.: um lançamento rápido sendo completado). */
+  inicial?: { valor: number; data: string; descricao?: string };
+  /** Chamado depois de salvar (antes de fechar). */
+  aoSalvar?: () => void;
+}) {
   const { dados, despachar } = useDados();
   const contasAtivas = dados.contas.filter((c) => !c.arquivada);
   const [tipo, setTipo] = useState<TipoLancamento>(editar?.tipo ?? tipoInicial);
-  const [valor, setValor] = useState(editar ? valorParaCampo(editar.valor) : '');
-  const [data, setData] = useState(editar?.data ?? hoje());
+  const [valor, setValor] = useState(editar ? valorParaCampo(editar.valor) : inicial ? valorParaCampo(inicial.valor) : '');
+  const [data, setData] = useState(editar?.data ?? inicial?.data ?? hoje());
   const [categoriaId, setCategoriaId] = useState(editar?.categoriaId ?? '');
   const [contaId, setContaId] = useState(editar?.contaId ?? (contasAtivas.length === 1 ? contasAtivas[0].id : contasAtivas[0]?.id ?? ''));
   const [destinoId, setDestinoId] = useState(editar?.contaDestinoId ?? '');
-  const [pago, setPago] = useState(editar ? editar.status === 'pago' : true);
+  const [pago, setPago] = useState(editar ? editar.status === 'pago' : (inicial?.data ?? hoje()) <= hoje());
   const [mexeuPago, setMexeuPago] = useState(!!editar);
-  const [descricao, setDescricao] = useState(editar?.descricao ?? '');
+  const [descricao, setDescricao] = useState(editar?.descricao ?? inicial?.descricao ?? '');
   const [docTipo, setDocTipo] = useState<'' | Documento['tipo']>(editar?.documento?.tipo ?? '');
   const [docNum, setDocNum] = useState(editar?.documento?.numero ?? '');
   const [nf, setNf] = useState(editar?.nf ?? '');
@@ -129,6 +137,7 @@ export function FormLancamento({ tipoInicial, editar, aoFechar }: { tipoInicial:
       });
       despachar({ t: 'lancamentos', lancamentos: lista });
     }
+    aoSalvar?.();
     aoFechar();
   }
 

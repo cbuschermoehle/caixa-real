@@ -2,7 +2,8 @@ import { Fragment, useState, type ReactNode } from 'react';
 import type { Bloco } from '../types';
 import { useDados } from '../data/store';
 import { blocosDe, ehPessoal, linhasDoRelatorio } from '../data/planos';
-import { cascata, pontoEquilibrio, rendaComprometida, saldos } from '../lib/calc';
+import { cascata, pontoEquilibrio, saldos } from '../lib/calc';
+import { rendaComprometida } from '../lib/futuro';
 import { brl, dataBR, hoje, mesDe, nomeMes, somaDias, somaMesesMes } from '../lib/format';
 import { BarraComprometida, Chave, Icone } from '../components/ui';
 import { FechamentoPDF, imprimirFechamento } from '../components/FechamentoPDF';
@@ -16,7 +17,7 @@ export function Relatorio() {
   const pe = pontoEquilibrio(dados, mes);
   const pessoal = ehPessoal(dados.empresa);
   const blocos = blocosDe(dados.empresa);
-  const rc = rendaComprometida(c);
+  const rc = rendaComprometida(dados, mes);
   const base = c.blocos.entradas.realizado + (comPrevistos ? c.blocos.entradas.previsto : 0);
   const pct = (v: number) => (base ? `${Math.round((v / base) * 100)}%` : '–');
   const inicioMes = somaDias(`${mes}-01`, -1);
@@ -150,7 +151,7 @@ export function Relatorio() {
             ) : (
               <>
                 <BarraComprometida pct={rc.pct} faixa={rc.faixa!} />
-                <p><strong>{rc.pct}%</strong> da renda de {brl(rc.renda)} vai para gastos essenciais ({brl(rc.essenciais)}) e dívidas ({brl(rc.dividas)}), contando o que já foi pago e o que está previsto.</p>
+                <p><strong>{rc.pct}%</strong> da renda de {brl(rc.renda)} vai para gastos essenciais ({brl(rc.essenciais)}), dívidas ({brl(rc.dividas)}){rc.parcelasCartao ? <> e parcelas no cartão ({brl(rc.parcelasCartao)})</> : null}, contando o que já foi pago e o que está previsto.</p>
                 <p className="ajuda">Referência: até 50% é tranquilo, de 50% a 70% pede atenção, acima de 70% sobra pouco para o dia a dia e para investir.</p>
               </>
             )}

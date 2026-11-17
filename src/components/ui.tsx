@@ -108,6 +108,8 @@ const CAMINHOS: Record<string, string> = {
   relatorio: 'M5 20V10M12 20V4M19 20v-7',
   ajustes: 'M4 7h10M18 7h2M4 17h4M12 17h8M16 5v4M10 15v4',
   seta: 'M9 6l6 6-6 6',
+  futuro: 'M4 19h16M4 15l5-5 4 3 7-7M15 6h5v5',
+  raio: 'M13 3L5 14h6l-1 7 8-11h-6l1-7z',
   voltar: 'M15 6l-6 6 6 6',
   check: 'M5 12l5 5 9-10',
   dividir: 'M12 3v6M12 9l-6 6v6M12 9l6 6v6',

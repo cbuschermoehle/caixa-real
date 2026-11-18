@@ -297,3 +297,20 @@ describe('compra antiga lançada no cartão depois do cadastro', () => {
     expect(s.lancamentos.filter((x) => x.faturaAuto).map((x) => x.fatura)).toEqual(['2026-11']);
   });
 });
+
+describe('parcelas lançadas depois do vencimento da fatura', () => {
+  it('cartão cadastrado antes da compra: parcelas de faturas já vencidas quando lançadas não cobram nada', () => {
+    const d = base();
+    d.contas[1] = { ...d.contas[1], dataSaldoInicial: '2026-01-01' };
+    const ipva = d.categorias.find((c) => c.nome === 'IPVA e licenciamento')!.id;
+    d.lancamentos = Array.from({ length: 6 }, (_, i) =>
+      l({ contaId: 'cr', valor: 46_421, categoriaId: ipva, data: '2026-05-11', criadoEm: '2026-11-18', serieId: 'ipva', parcela: { n: i + 1, total: 6 }, fatura: `2026-${String(6 + i).padStart(2, '0')}` }));
+    // Uma compra de verdade, lançada no dia, na fatura de dezembro.
+    d.lancamentos.push(l({ contaId: 'cr', valor: 10_000, categoriaId: d.categorias.find((c) => c.nome === 'Mercado')!.id, data: '2026-11-18', criadoEm: '2026-11-18', fatura: '2026-12' }));
+    const s = sincronizarFaturas(d, '2026-11-18');
+    expect(faturasDoCartao(s, s.contas[1]).map((f) => [f.mes, f.falta])).toEqual([
+      ['2026-06', 0], ['2026-07', 0], ['2026-08', 0], ['2026-09', 0], ['2026-10', 0], ['2026-11', 0], ['2026-12', 10_000],
+    ]);
+    expect(s.lancamentos.filter((x) => x.faturaAuto).map((x) => x.fatura)).toEqual(['2026-12']);
+  });
+});

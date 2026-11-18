@@ -51,7 +51,7 @@ export function Painel({ novo, ir, rapido, pendentes, lancar }: { novo: (t: Tipo
             {s.porConta.map(({ conta, saldo }) => (
               <li key={conta.id}>
                 <span>{conta.nome}{conta.tipo === 'aplicacao' && <em> · aplicação</em>}{conta.tipo === 'cartao' && <em> · cartão (compras ainda não pagas)</em>}</span>
-                <span className="num">{brl(saldo)}</span>
+                <span className="num">{brl(conta.tipo === 'cartao' ? -(resumoCartao(dados, conta, h)?.usado ?? 0) : saldo)}</span>
               </li>
             ))}
           </ul>

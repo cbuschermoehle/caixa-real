@@ -1,7 +1,7 @@
 import type { Bem, Conta, Dados, Lancamento, TipoBem, TipoInvestimento } from '../types';
 import { raiz } from './categorias';
 import { saldoConta, ehDisponivel } from './calc';
-import { ehCartao } from './cartao';
+import { ehCartao, resumoCartao } from './cartao';
 import { hoje, mesDe, somaMesesMes, ultimoDiaDoMes } from './format';
 
 /*
@@ -197,7 +197,8 @@ export function patrimonioEm(dados: Dados, data = hoje()): Patrimonio {
   }
   for (const c of dados.contas) {
     if (!ehCartao(c)) continue;
-    const aberto = -saldoConta(dados, c, data);
+    // Hoje: o que falta pagar das faturas (já desconta compras antigas pagas por fora). No passado: pelo saldo do cartão.
+    const aberto = data >= hoje() ? resumoCartao(dados, c, data)?.usado ?? 0 : -saldoConta(dados, c, data);
     if (aberto > 0) dividas.push({ id: c.id, nome: c.nome, valor: aberto, cartao: true });
   }
   dividas.sort((a, b) => b.valor - a.valor);

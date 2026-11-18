@@ -62,6 +62,8 @@ export interface Fatura {
   falta: number;
   /** Venceu antes de o cartão ser cadastrado no app: já foi paga por fora, não cobra nada. */
   anterior?: boolean;
+  /** Compras lançadas no app só depois que esta fatura venceu (ex.: IPVA de maio lançado em novembro): já pagas por fora. */
+  retroativo: number;
   compras: Lancamento[];
 }
 
@@ -73,7 +75,7 @@ export function faturasDoCartao(dados: Dados, conta: Conta): Fatura[] {
   const pegar = (mes: string) => {
     let f = mapa.get(mes);
     if (!f) {
-      f = { mes, vencimento: vencimentoDaFatura(mes, info), fechamento: fechamentoDaFatura(mes, info), total: 0, pago: 0, falta: 0, compras: [] };
+      f = { mes, vencimento: vencimentoDaFatura(mes, info), fechamento: fechamentoDaFatura(mes, info), total: 0, pago: 0, falta: 0, retroativo: 0, compras: [] };
       mapa.set(mes, f);
     }
     return f;
@@ -83,16 +85,18 @@ export function faturasDoCartao(dados: Dados, conta: Conta): Fatura[] {
       const f = pegar(l.fatura ?? faturaDaCompra(l.data, info));
       f.total += l.tipo === 'saida' ? l.valor : -l.valor;
       f.compras.push(l);
+      if (l.tipo === 'saida' && l.criadoEm.slice(0, 10) > f.vencimento) f.retroativo += l.valor;
     } else if (ehPagamento(l, conta.id) && l.status === 'pago') {
       pegar(l.fatura ?? faturaDoPagamento(l.data, info)).pago += l.valor;
     }
   }
   const lista = [...mapa.values()].sort((a, b) => a.mes.localeCompare(b.mes));
   for (const f of lista) {
-    // Compras antigas lançadas depois (ex.: IPVA de maio parcelado no cartão): as faturas que venceram
-    // antes do cadastro do cartão já foram pagas fora do app e não viram conta em aberto.
+    // Compras antigas lançadas depois (ex.: IPVA de maio parcelado no cartão, lançado em novembro):
+    // faturas que venceram antes do cadastro do cartão, e parcelas lançadas depois do vencimento da
+    // fatura delas, já foram pagas fora do app e não viram conta em aberto.
     f.anterior = f.vencimento < conta.dataSaldoInicial;
-    f.falta = f.anterior ? 0 : Math.max(0, f.total - f.pago);
+    f.falta = f.anterior ? 0 : Math.max(0, f.total - f.pago - f.retroativo);
     f.compras.sort((a, b) => a.data.localeCompare(b.data));
   }
   return lista;

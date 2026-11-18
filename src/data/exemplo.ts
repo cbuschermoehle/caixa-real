@@ -127,7 +127,8 @@ export function dadosPessoaisDeExemplo(ref = hoje()) {
   // Compra no cartão: sempre "paga" (já aconteceu); o dinheiro sai quando a fatura é paga.
   const noCartao = (data: string, valor: number, categoria: string, descricao: string, extra: Partial<Lancamento> = {}) => {
     if (data > ref) return;
-    add('saida', data, valor, categoria, descricao, cartao.id, { status: 'pago', ...extra });
+    // Lançada no dia da compra (senão o app entende que a fatura já foi paga por fora).
+    add('saida', data, valor, categoria, descricao, cartao.id, { status: 'pago', criadoEm: data, ...extra });
   };
 
   // Contas fixas e renda já previstas para os próximos 12 meses (como se lançadas com "Todo mês").

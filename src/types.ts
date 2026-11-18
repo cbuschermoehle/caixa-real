@@ -150,6 +150,8 @@ export interface TransacaoExtrato {
   valor: number;
   situacao: SituacaoExtrato;
   lancamentoId?: string;
+  /** Fatura do cartão (AAAA-MM) de onde veio a linha, quando o arquivo importado é uma fatura. */
+  fatura?: string;
 }
 
 export interface Importacao {

@@ -4,10 +4,11 @@ import type { Dados, Importacao, Lancamento, Regra, TransacaoExtrato } from '../
 import { useBlocos, useDados } from '../data/store';
 import { aprender, confirmarDividida, confirmarLinha, diferencaDaBaixa, previstosParaBaixa, regraPara, sentidoDe, vinculoPara, type Escolha } from '../lib/conciliar';
 import {
-  adivinharMapeamento, aplicarMapeamento, assinatura, decodificar, marcarRepetidas, formatoDoArquivo, lerCSV, lerOFX, lerXLSX,
+  adivinharMapeamento, aplicarMapeamento, assinatura, comprasPositivas, decodificar, ehPagamentoDeFatura, marcarRepetidas, formatoDoArquivo, lerCSV, lerOFX, lerXLSX,
   type LinhaExtrato, type Mapeamento,
 } from '../lib/importar';
-import { brl, dataBR, dataCurta, hoje, novoId, parseValor, valorParaCampo } from '../lib/format';
+import { brl, dataBR, dataCurta, hoje, mesCurto, novoId, parseValor, somaMesesMes, valorParaCampo } from '../lib/format';
+import { ehCartao, faturaDaCompra, vencimentoDaFatura } from '../lib/cartao';
 import { Campo, Confirmar, Folha, Icone, SeletorCategoria, SeletorConta } from '../components/ui';
 
 // ---------- Inbox ----------
@@ -93,7 +94,7 @@ export function Extrato() {
       <header className="tela-topo">
         <h1>Extrato bancário</h1>
         <button type="button" className="btn btn-primario" onClick={() => setImportando(true)}>Importar arquivo</button>
-        <p className="lead">Importe o extrato do internet banking (OFX, CSV ou Excel), confira a categoria de cada linha e confirme. Só depois de confirmar ela entra no saldo.</p>
+        <p className="lead">Importe o extrato do banco ou a fatura do cartão (OFX, CSV ou Excel), confira a categoria de cada linha e confirme. Só depois de confirmar ela entra no saldo.</p>
       </header>
 
       {extrato.length === 0 ? (
@@ -275,7 +276,10 @@ function Importar({ aoFechar }: { aoFechar: () => void }) {
   const [lembrado, setLembrado] = useState(false);
   const [erro, setErro] = useState('');
   const [arrastando, setArrastando] = useState(false);
-  const [resultado, setResultado] = useState<{ novas: number; bloqueadas: number; puladas: number; antes: number } | null>(null);
+  const [resultado, setResultado] = useState<{ novas: number; bloqueadas: number; puladas: number; antes: number; pagamentos: number; fatura?: string } | null>(null);
+  const [faturaEscolhida, setFaturaEscolhida] = useState('');
+  const contaSel = ativas.find((c) => c.id === contaId);
+  const cartao = ehCartao(contaSel) ? contaSel.cartao : undefined;
 
   async function abrir(arquivo: File) {
     setErro('');
@@ -285,13 +289,15 @@ function Importar({ aoFechar }: { aoFechar: () => void }) {
       if (!formato) return setErro('Arquivos .xls antigos não são lidos. No Excel, salve como .xlsx ou CSV e tente de novo.');
       if (formato === 'ofx') {
         const linhasOfx = lerOFX(decodificar(buf));
-        if (!linhasOfx.length) return setErro('Não achei movimentações neste OFX. Confira se é o extrato da conta (e não da fatura do cartão).');
+        if (!linhasOfx.length) return setErro('Não achei movimentações neste OFX. Confira se é o arquivo certo.');
         setLido({ nome: arquivo.name, formato, linhasOfx });
         return;
       }
       const tabela = formato === 'xlsx' ? await lerXLSX(buf) : lerCSV(decodificar(buf));
       if (tabela.length < 2) return setErro('O arquivo está vazio ou tem só uma linha.');
       const palpite = adivinharMapeamento(tabela);
+      // Fatura de cartão em CSV (ex.: Nubank) traz as compras positivas: já liga o "inverter sinal".
+      if (cartao && comprasPositivas(aplicarMapeamento(tabela, palpite).linhas)) palpite.inverterSinal = true;
       const modelo = (dados.modelos ?? []).find((m) => m.contaId === contaId && m.assinatura === assinatura(tabela, palpite));
       setMap(modelo ? modelo.mapeamento : palpite);
       setLembrado(!!modelo);
@@ -302,10 +308,18 @@ function Importar({ aoFechar }: { aoFechar: () => void }) {
   }
 
   const previa = lido?.tabela && map ? aplicarMapeamento(lido.tabela, map) : null;
+  const todasLinhas = lido?.linhasOfx ?? previa?.linhas ?? [];
+  // Cartão: o pagamento da fatura não entra (já sai da conta corrente) e as compras vão para a fatura escolhida.
+  const linhasUteis = cartao ? todasLinhas.filter((l) => !ehPagamentoDeFatura(l.descricao)) : todasLinhas;
+  const pagamentos = todasLinhas.length - linhasUteis.length;
+  const ultimaData = linhasUteis.reduce((a, l) => (l.data > a ? l.data : a), '');
+  const faturaPadrao = cartao && ultimaData ? faturaDaCompra(ultimaData, cartao) : '';
+  const fatura = cartao ? faturaEscolhida || faturaPadrao : '';
+  const opcoesFatura = faturaPadrao ? Array.from({ length: 8 }, (_, i) => somaMesesMes(faturaPadrao, i - 5)) : [];
 
   function importar() {
     if (!lido || !contaId) return;
-    const linhas = lido.linhasOfx ?? previa?.linhas ?? [];
+    const linhas = linhasUteis;
     if (!linhas.length) return setErro('Nenhuma linha válida com essas colunas. Confira qual coluna é a data e qual é o valor.');
     const marcas = marcarRepetidas(contaId, linhas, dados.extrato ?? []);
     const conta = dados.contas.find((c) => c.id === contaId)!;
@@ -314,15 +328,15 @@ function Importar({ aoFechar }: { aoFechar: () => void }) {
     let antes = 0;
     linhas.forEach((l, i) => {
       if (marcas[i].repetida) return imp.bloqueadas++;
-      if (l.data < conta.dataSaldoInicial) antes++;
-      transacoes.push({ id: novoId(), contaId, importacaoId: imp.id, chave: marcas[i].chave, data: l.data, descricao: l.descricao, valor: l.valor, situacao: 'pendente' });
+      if (!cartao && l.data < conta.dataSaldoInicial) antes++;
+      transacoes.push({ id: novoId(), contaId, importacaoId: imp.id, chave: marcas[i].chave, data: l.data, descricao: l.descricao, valor: l.valor, situacao: 'pendente', ...(fatura ? { fatura } : {}) });
     });
     imp.novas = transacoes.length;
     despachar({
       t: 'importar', importacao: imp, transacoes,
       modelo: lido.tabela && map ? { contaId, assinatura: assinatura(lido.tabela, map), mapeamento: map } : undefined,
     });
-    setResultado({ novas: imp.novas, bloqueadas: imp.bloqueadas, puladas: previa?.puladas ?? 0, antes });
+    setResultado({ novas: imp.novas, bloqueadas: imp.bloqueadas, puladas: previa?.puladas ?? 0, antes, pagamentos, fatura: fatura || undefined });
   }
 
   if (resultado) {
@@ -336,6 +350,8 @@ function Importar({ aoFechar }: { aoFechar: () => void }) {
           </dl>
           {resultado.bloqueadas > 0 && <p className="ajuda">{resultado.bloqueadas} {resultado.bloqueadas === 1 ? 'linha já tinha' : 'linhas já tinham'} sido importada(s) antes e não entraram de novo. O saldo não fica duplicado.</p>}
           {resultado.puladas > 0 && <p className="ajuda">Linhas puladas são saldos, totais ou linhas sem data ou valor.</p>}
+          {resultado.fatura && <p className="ajuda">As compras vão para a fatura de {mesCurto(`${resultado.fatura}-01`)}. No Inbox, escolha a categoria de cada uma. Se aparecer algo que você já lançou à mão (como uma parcela), o app sugere ligar ao lançamento que já existe, para não duplicar.</p>}
+          {resultado.pagamentos > 0 && <p className="ajuda">{resultado.pagamentos === 1 ? 'A linha do pagamento da fatura ficou' : `${resultado.pagamentos} linhas de pagamento da fatura ficaram`} de fora: esse dinheiro já sai da sua conta corrente.</p>}
           {resultado.antes > 0 && <p className="ajuda">{resultado.antes} {resultado.antes === 1 ? 'linha é' : 'linhas são'} de antes da data do saldo inicial da conta. Elas vão para o relatório, mas não mexem no saldo.</p>}
           <button type="button" className="btn btn-primario btn-grande" onClick={aoFechar}>{resultado.novas ? 'Revisar agora' : 'Fechar'}</button>
         </div>
@@ -358,13 +374,13 @@ function Importar({ aoFechar }: { aoFechar: () => void }) {
   );
 
   return (
-    <Folha titulo="Importar extrato" aoFechar={aoFechar}>
+    <Folha titulo={cartao ? 'Importar fatura' : 'Importar extrato'} aoFechar={aoFechar}>
       <div className="form">
-        <Campo rotulo="De qual banco é este extrato?" id="i-conta">
-          <SeletorConta id="i-conta" valor={contaId} aoMudar={(v) => { setContaId(v); setLido(null); }} contas={ativas} />
+        <Campo rotulo="De qual banco ou cartão é este arquivo?" id="i-conta">
+          <SeletorConta id="i-conta" valor={contaId} aoMudar={(v) => { setContaId(v); setLido(null); setFaturaEscolhida(''); }} contas={ativas} />
         </Campo>
-        {contaId && ativas.find((c) => c.id === contaId)?.tipo === 'cartao' && (
-          <p className="ajuda">Fatura de cartão: as compras precisam aparecer como saída (−). Se vierem como entrada, ligue "Inverter sinal". O pagamento da fatura que aparece neste arquivo pode ser ignorado no Inbox, porque ele já sai da conta corrente.</p>
+        {cartao && (
+          <p className="ajuda">Fatura de cartão: use o arquivo da fatura (CSV ou OFX). As compras precisam aparecer como saída (−); eu já tento acertar o sinal sozinho. A linha do pagamento da fatura fica de fora, porque esse dinheiro já sai da conta corrente.</p>
         )}
         {!contaId ? (
           <p className="ajuda">Escolha primeiro a conta do banco deste extrato (por exemplo, o arquivo do Nubank vai na conta do Nubank).</p>
@@ -419,7 +435,7 @@ function Importar({ aoFechar }: { aoFechar: () => void }) {
                 <caption>Como vai ficar (primeiras 3 linhas)</caption>
                 <thead><tr><th>Data</th><th>Descrição</th><th className="num">Valor</th></tr></thead>
                 <tbody>
-                  {previa!.linhas.slice(0, 3).map((l, i) => (
+                  {linhasUteis.slice(0, 3).map((l, i) => (
                     <tr key={i}><td>{dataBR(l.data)}</td><td>{l.descricao}</td><td className={`num ${l.valor > 0 ? 'pos' : 'neg'}`}>{brl(l.valor)}</td></tr>
                   ))}
                   {!previa!.linhas.length && <tr><td colSpan={3} className="erro">Nenhuma linha válida. Ajuste as colunas acima.</td></tr>}
@@ -434,6 +450,13 @@ function Importar({ aoFechar }: { aoFechar: () => void }) {
             )}
             <p className="ajuda">{previa!.linhas.length} movimentações encontradas{previa!.puladas ? `, ${previa!.puladas} linhas puladas (saldos, totais ou vazias)` : ''}.</p>
           </>
+        )}
+        {lido && cartao && fatura && (
+          <Campo rotulo="Qual fatura é este arquivo?" id="i-fatura" ajuda={pagamentos ? `${pagamentos === 1 ? 'A linha' : `${pagamentos} linhas`} de pagamento da fatura ${pagamentos === 1 ? 'fica' : 'ficam'} de fora.` : undefined}>
+            <select id="i-fatura" value={fatura} onChange={(e) => setFaturaEscolhida(e.target.value === faturaPadrao ? '' : e.target.value)}>
+              {opcoesFatura.map((f) => <option key={f} value={f}>Fatura de {mesCurto(`${f}-01`)} · vence {dataBR(vencimentoDaFatura(f, cartao))}</option>)}
+            </select>
+          </Campo>
         )}
         {erro && <p className="erro">{erro}</p>}
         {lido && (

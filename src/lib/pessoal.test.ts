@@ -7,6 +7,7 @@ import { cascata, longoPrazo, saldos, totaisPrevistos } from './calc';
 import { compromissos, futuroMensal, limitesDoMes, rendaComprometida } from './futuro';
 import { faturaDaCompra, faturaDoPagamento, faturasDoCartao, resumoCartao, sincronizarFaturas, vencimentoDaFatura } from './cartao';
 import { confirmarLinha, vinculoPara } from './conciliar';
+import { adivinharMapeamento, aplicarMapeamento, comprasPositivas, ehPagamentoDeFatura, lerCSV } from './importar';
 
 const info = { fechamento: 3, vencimento: 10 };
 
@@ -312,5 +313,34 @@ describe('parcelas lançadas depois do vencimento da fatura', () => {
       ['2026-06', 0], ['2026-07', 0], ['2026-08', 0], ['2026-09', 0], ['2026-10', 0], ['2026-11', 0], ['2026-12', 10_000],
     ]);
     expect(s.lancamentos.filter((x) => x.faturaAuto).map((x) => x.fatura)).toEqual(['2026-12']);
+  });
+});
+
+describe('importar fatura do cartão (CSV em inglês, estilo Nubank)', () => {
+  const csv = 'date,title,amount\n2026-10-28,Padaria Exemplo,23.50\n2026-10-30,Pagamento recebido,-812.40\n2026-05-11,Imposto Exemplo - Parcela 6/6,464.21\n2026-11-01,Estorno Loja,-10.00\n';
+
+  it('acha as colunas, inverte o sinal e reconhece o pagamento da fatura', () => {
+    const tabela = lerCSV(csv);
+    const m = adivinharMapeamento(tabela);
+    expect([m.linhaCabecalho, m.data, m.descricao, m.valor]).toEqual([0, 0, 1, 2]);
+    const linhas = aplicarMapeamento(tabela, m).linhas;
+    expect(comprasPositivas(linhas)).toBe(true);
+    const inv = aplicarMapeamento(tabela, { ...m, inverterSinal: true }).linhas.filter((l) => !ehPagamentoDeFatura(l.descricao));
+    expect(inv.map((l) => l.valor)).toEqual([-2350, -46421, 1000]);
+    expect(faturaDaCompra('2026-11-01', info)).toBe('2026-11');
+  });
+
+  it('parcela já lançada à mão é sugerida para ligar (mesma fatura), e a compra nova entra na fatura do arquivo', () => {
+    const d = base();
+    const ipva = Array.from({ length: 6 }, (_, i): Lancamento => ({
+      id: `ip${i + 1}`, tipo: 'saida', valor: 46_421, data: '2026-05-11', status: 'pago', contaId: 'cr', origem: 'manual',
+      criadoEm: '2026-11-18', fatura: `2026-${String(i + 6).padStart(2, '0')}`, parcela: { n: i + 1, total: 6 }, serieId: 'ip',
+    }));
+    d.lancamentos = ipva;
+    const t = { id: 't', contaId: 'cr', importacaoId: 'i', chave: 'k', data: '2026-05-11', descricao: 'Imposto - Parcela 6/6', valor: -46_421, situacao: 'pendente' as const, fatura: '2026-11' };
+    expect(vinculoPara(d, t)?.id).toBe('ip6');
+    const cat = d.categorias.find((c) => c.nome === 'Mercado')!.id;
+    const r = confirmarLinha(d, { ...t, id: 't2', descricao: 'Padaria', valor: -2350, data: '2026-10-28' }, { tipo: 'categoria', categoriaId: cat })!;
+    expect(r.lancamento.fatura).toBe('2026-11');
   });
 });

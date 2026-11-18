@@ -41,9 +41,12 @@ export function vinculoPara(dados: Dados, t: TransacaoExtrato, jaUsados: Set<str
   const alvo = Math.abs(t.valor);
   const dir = Math.sign(t.valor);
   return dados.lancamentos
-    .filter((l) => !l.extratoId && !jaUsados.has(l.id) && l.valor === alvo && direcaoNaConta(l, t.contaId) === dir && Math.abs(diasEntre(l.data, t.data)) <= 3)
-    .sort((a, b) => (a.status === b.status ? 0 : a.status === 'previsto' ? -1 : 1) || Math.abs(diasEntre(a.data, t.data)) - Math.abs(diasEntre(b.data, t.data)))[0];
+    .filter((l) => !l.extratoId && !jaUsados.has(l.id) && l.valor === alvo && direcaoNaConta(l, t.contaId) === dir && (Math.abs(diasEntre(l.data, t.data)) <= 3 || mesmaFatura(l, t)))
+    .sort((a, b) => Number(mesmaFatura(b, t)) - Number(mesmaFatura(a, t)) || (a.status === b.status ? 0 : a.status === 'previsto' ? -1 : 1) || Math.abs(diasEntre(a.data, t.data)) - Math.abs(diasEntre(b.data, t.data)))[0];
 }
+
+/** Compra já lançada no cartão na mesma fatura do arquivo importado (ex.: parcela 6/6 lançada à mão). */
+const mesmaFatura = (l: Lancamento, t: TransacaoExtrato) => !!t.fatura && l.tipo !== 'transferencia' && l.fatura === t.fatura;
 
 export type Escolha =
   | { tipo: 'categoria'; categoriaId: string }
@@ -85,6 +88,7 @@ export function confirmarLinha(dados: Dados, t: TransacaoExtrato, e: Escolha): {
     lancamento = {
       id: novoId(), tipo: sentido, valor, data: t.data, status: 'pago', contaId: t.contaId,
       categoriaId: e.categoriaId, descricao: t.descricao, origem: 'extrato', criadoEm: hoje(), extratoId: t.id,
+      ...(t.fatura ? { fatura: t.fatura } : {}),
     };
   }
   return { transacao: { ...t, situacao: 'confirmada', lancamentoId: lancamento.id }, lancamento, extras };
@@ -144,6 +148,7 @@ export function confirmarDividida(t: TransacaoExtrato, partes: { categoriaId: st
   const lancs: Lancamento[] = partes.map((p) => ({
     id: novoId(), tipo: sentido, valor: p.valor, data: t.data, status: 'pago', contaId: t.contaId,
     categoriaId: p.categoriaId, descricao: p.descricao?.trim() || t.descricao, origem: 'extrato', criadoEm: hoje(), extratoId: t.id,
+    ...(t.fatura ? { fatura: t.fatura } : {}),
   }));
   return { transacao: { ...t, situacao: 'confirmada' as const, lancamentoId: lancs[0].id }, lancamento: lancs[0], extras: lancs.slice(1) };
 }

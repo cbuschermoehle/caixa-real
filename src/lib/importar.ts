@@ -259,7 +259,7 @@ export function adivinharMapeamento(tabela: string[][]): Mapeamento {
   let linhaCabecalho = -1;
   for (let i = 0; i < Math.min(15, tabela.length); i++) {
     const n = tabela[i].map(normalizar);
-    if (n.some((c) => /^DATA/.test(c)) && n.some((c) => /VALOR|CREDITO|DEBITO|ENTRADA|SAIDA|QUANTIA|MONTANTE/.test(c))) {
+    if (n.some((c) => /^DATA|^DATE$/.test(c)) && n.some((c) => /VALOR|CREDITO|DEBITO|ENTRADA|SAIDA|QUANTIA|MONTANTE|AMOUNT/.test(c))) {
       linhaCabecalho = i;
       break;
     }
@@ -267,10 +267,10 @@ export function adivinharMapeamento(tabela: string[][]): Mapeamento {
   const cab = linhaCabecalho >= 0 ? tabela[linhaCabecalho] : [];
   const m: Mapeamento = {
     linhaCabecalho,
-    data: Math.max(0, achar(cab, /^DATA( DO)? (LANC|MOV)/, /^DATA$/, /^DATA/)),
-    descricao: achar(cab, /^(HISTORICO|DESCRICAO|LANCAMENTO|DETALHE|MEMO)/, /HISTORICO|DESCRICAO/),
+    data: Math.max(0, achar(cab, /^DATA( DO)? (LANC|MOV)/, /^DATA$/, /^DATE$/, /^DATA/)),
+    descricao: achar(cab, /^(HISTORICO|DESCRICAO|LANCAMENTO|DETALHE|MEMO|TITLE|DESCRIPTION)/, /HISTORICO|DESCRICAO/),
     modoValor: 'unico',
-    valor: achar(cab, /^VALOR( \(R\$\))?$/, /^VALOR/, /QUANTIA|MONTANTE/),
+    valor: achar(cab, /^VALOR( \(R\$\))?$/, /^VALOR/, /^AMOUNT/, /QUANTIA|MONTANTE/),
     entrada: achar(cab, /CREDITO|ENTRADA/),
     saida: achar(cab, /DEBITO|SAIDA/),
     inverterSinal: false,
@@ -285,6 +285,16 @@ export function adivinharMapeamento(tabela: string[][]): Mapeamento {
   m.entrada = Math.max(0, m.entrada);
   m.saida = Math.max(0, m.saida);
   return m;
+}
+
+/** Linha da fatura do cartão que é o pagamento da própria fatura (já sai da conta corrente, não é compra). */
+export const ehPagamentoDeFatura = (descricao: string) =>
+  /PAGAMENTO (RECEBIDO|DE FATURA|DA FATURA|EFETUADO)|PAGTO FATURA|PGTO FATURA/.test(normalizar(descricao));
+
+/** Fatura de cartão em CSV costuma trazer compras como positivas: a maioria positiva indica que precisa inverter. */
+export function comprasPositivas(linhas: LinhaExtrato[]) {
+  const compras = linhas.filter((l) => !ehPagamentoDeFatura(l.descricao));
+  return compras.filter((l) => l.valor > 0).length > compras.length / 2;
 }
 
 /** Aplica o mapeamento. Linhas sem data ou valor válidos (saldos, totais) são puladas e contadas. */

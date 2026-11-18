@@ -288,7 +288,9 @@ function Importar({ aoFechar }: { aoFechar: () => void }) {
       const formato = formatoDoArquivo(arquivo.name, buf);
       if (!formato) return setErro('Arquivos .xls antigos não são lidos. No Excel, salve como .xlsx ou CSV e tente de novo.');
       if (formato === 'ofx') {
-        const linhasOfx = lerOFX(decodificar(buf));
+        let linhasOfx = lerOFX(decodificar(buf));
+        // Alguns cartões mandam as compras positivas no OFX: acerta o sinal.
+        if (cartao && comprasPositivas(linhasOfx)) linhasOfx = linhasOfx.map((l) => ({ ...l, valor: -l.valor }));
         if (!linhasOfx.length) return setErro('Não achei movimentações neste OFX. Confira se é o arquivo certo.');
         setLido({ nome: arquivo.name, formato, linhasOfx });
         return;

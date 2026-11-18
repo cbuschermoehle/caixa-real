@@ -280,3 +280,20 @@ describe('futuro e lançamento rápido', () => {
     expect(c.perfis[0].pendentes).toEqual([]);
   });
 });
+
+describe('compra antiga lançada no cartão depois do cadastro', () => {
+  it('faturas que venceram antes do cadastro do cartão não viram conta em aberto', () => {
+    const d = base();
+    const ipva = d.categorias.find((c) => c.nome === 'IPVA e licenciamento')!.id;
+    // IPVA de maio em 6x; cartão cadastrado em 2026-11-01. Faturas jun a nov (vencem dia 10).
+    d.lancamentos = Array.from({ length: 6 }, (_, i) =>
+      l({ contaId: 'cr', valor: 50_000, categoriaId: ipva, data: '2026-05-04', serieId: 'ipva', parcela: { n: i + 1, total: 6 }, fatura: `2026-${String(6 + i).padStart(2, '0')}` }));
+    const s = sincronizarFaturas(d, '2026-11-18');
+    const faturas = faturasDoCartao(s, s.contas[1]);
+    expect(faturas.map((f) => [f.mes, f.falta, !!f.anterior])).toEqual([
+      ['2026-06', 0, true], ['2026-07', 0, true], ['2026-08', 0, true], ['2026-09', 0, true], ['2026-10', 0, true], ['2026-11', 50_000, false],
+    ]);
+    // Só a fatura que vence depois do cadastro ganha pagamento previsto.
+    expect(s.lancamentos.filter((x) => x.faturaAuto).map((x) => x.fatura)).toEqual(['2026-11']);
+  });
+});

@@ -60,6 +60,8 @@ export interface Fatura {
   pago: number;
   /** O que ainda falta pagar (nunca negativo). */
   falta: number;
+  /** Venceu antes de o cartão ser cadastrado no app: já foi paga por fora, não cobra nada. */
+  anterior?: boolean;
   compras: Lancamento[];
 }
 
@@ -87,7 +89,10 @@ export function faturasDoCartao(dados: Dados, conta: Conta): Fatura[] {
   }
   const lista = [...mapa.values()].sort((a, b) => a.mes.localeCompare(b.mes));
   for (const f of lista) {
-    f.falta = Math.max(0, f.total - f.pago);
+    // Compras antigas lançadas depois (ex.: IPVA de maio parcelado no cartão): as faturas que venceram
+    // antes do cadastro do cartão já foram pagas fora do app e não viram conta em aberto.
+    f.anterior = f.vencimento < conta.dataSaldoInicial;
+    f.falta = f.anterior ? 0 : Math.max(0, f.total - f.pago);
     f.compras.sort((a, b) => a.data.localeCompare(b.data));
   }
   return lista;

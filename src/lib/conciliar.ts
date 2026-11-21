@@ -41,9 +41,24 @@ export function vinculoPara(dados: Dados, t: TransacaoExtrato, jaUsados: Set<str
   const alvo = Math.abs(t.valor);
   const dir = Math.sign(t.valor);
   return dados.lancamentos
-    .filter((l) => !l.extratoId && !jaUsados.has(l.id) && l.valor === alvo && direcaoNaConta(l, t.contaId) === dir && (Math.abs(diasEntre(l.data, t.data)) <= 3 || mesmaFatura(l, t)))
+    .filter((l) => livreParaLinha(dados, l, t) && !jaUsados.has(l.id) && l.valor === alvo && direcaoNaConta(l, t.contaId) === dir && (Math.abs(diasEntre(l.data, t.data)) <= 3 || mesmaFatura(l, t)))
     .sort((a, b) => Number(mesmaFatura(b, t)) - Number(mesmaFatura(a, t)) || (a.status === b.status ? 0 : a.status === 'previsto' ? -1 : 1) || Math.abs(diasEntre(a.data, t.data)) - Math.abs(diasEntre(b.data, t.data)))[0];
 }
+
+/**
+ * O lançamento ainda pode ser ligado a esta linha do extrato?
+ * Sim se não foi conciliado. Uma transferência tem duas pontas: se já foi ligada à linha de uma conta,
+ * ainda pode receber a linha da outra conta (ex.: importou a Viacredi e agora importa a Caixa).
+ */
+export function livreParaLinha(dados: Dados, l: Lancamento, t: TransacaoExtrato): boolean {
+  if (!l.extratoId) return true;
+  if (l.tipo !== 'transferencia' || l.extratoOutraPontaId) return false;
+  const primeira = (dados.extrato ?? []).find((x) => x.id === l.extratoId);
+  return !!primeira && primeira.contaId !== t.contaId;
+}
+
+/** Transferência já conciliada pela outra conta: esta linha é só a outra ponta dela. */
+export const ehOutraPonta = (l: Lancamento) => l.tipo === 'transferencia' && !!l.extratoId;
 
 /** Compra já lançada no cartão na mesma fatura do arquivo importado (ex.: parcela 6/6 lançada à mão). */
 const mesmaFatura = (l: Lancamento, t: TransacaoExtrato) => !!t.fatura && l.tipo !== 'transferencia' && l.fatura === t.fatura;
@@ -62,6 +77,10 @@ export function confirmarLinha(dados: Dados, t: TransacaoExtrato, e: Escolha): {
   if (e.tipo === 'vinculo') {
     const l = dados.lancamentos.find((x) => x.id === e.lancamentoId);
     if (!l) return null;
+    if (ehOutraPonta(l)) {
+      // Segunda ponta da mesma transferência: não muda valor nem data, só registra a linha desta conta.
+      return { transacao: { ...t, situacao: 'confirmada', lancamentoId: l.id }, lancamento: { ...l, extratoOutraPontaId: t.id } };
+    }
     // Transferência (ex.: pagamento de fatura do cartão) fica com o valor que saiu de verdade no banco.
     const conta = l.tipo === 'transferencia' ? { valor } : { contaId: t.contaId };
     lancamento = { ...l, ...conta, status: 'pago', data: t.data, extratoId: t.id };

@@ -465,8 +465,10 @@ input:focus, select:focus { border-color: var(--acento); outline: 2px solid colo
   .p-topo { display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 2px solid #16243a; padding-bottom: 8px; margin-bottom: 14px; }
   .p-empresa { margin: 0; font-weight: 700; color: #2c4c9c; }
   .p-emissao { margin: 0; text-align: right; color: #555; font-size: 8.5pt; }
-  .p-secao { margin-bottom: 14px; break-inside: avoid; }
-  .p-lado { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  /* O resumo pode começar na página 1 e continuar na seguinte (o cabeçalho da tabela se repete). */
+  .p-secao { margin-bottom: 14px; }
+  .p-secao h2 { break-after: avoid; }
+  .p-lado { break-inside: avoid; display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
   .p-quebra { break-before: page; }
   .p-quebra .p-secao { break-inside: auto; }
   .p-tabela { width: 100%; border-collapse: collapse; }

@@ -19,10 +19,10 @@ export function Relatorio() {
   const blocos = blocosDe(dados.empresa);
   const rc = rendaComprometida(dados, mes);
   const base = c.blocos.entradas.realizado + (comPrevistos ? c.blocos.entradas.previsto : 0);
-  const pct = (v: number) => (base ? `${Math.round((v / base) * 100)}%` : '–');
-  const inicioMes = somaDias(`${mes}-01`, -1);
+  const pct = (v: number) => (base ? `${((v / base) * 100).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%` : '–');
   const fimMes = somaDias(`${somaMesesMes(mes, 1)}-01`, -1);
-  const saldoIni = saldos(dados, inicioMes).total;
+  // Abertura do dia 1: o saldo inicial cadastrado com data do dia 1 já conta.
+  const saldoIni = saldos(dados, `${mes}-01`, true).total;
   const saldoFim = saldos(dados, fimMes).total;
 
   const alternar = (b: Bloco) =>

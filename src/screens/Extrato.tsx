@@ -2,7 +2,7 @@ import { emArvore, nomeCategoria, rotuloDocumento } from '../lib/categorias';
 import { useMemo, useState } from 'react';
 import type { Dados, Importacao, Lancamento, Regra, TransacaoExtrato } from '../types';
 import { useBlocos, useDados } from '../data/store';
-import { aprender, categoriaDoDesconto, confirmarDividida, confirmarLinha, diferencaDaBaixa, previstosParaBaixa, regraPara, sentidoDe, vinculoPara, type Escolha } from '../lib/conciliar';
+import { aprender, categoriaDoDesconto, confirmarDividida, confirmarLinha, diferencaDaBaixa, ehOutraPonta, previstosParaBaixa, regraPara, sentidoDe, vinculoPara, type Escolha } from '../lib/conciliar';
 import {
   adivinharMapeamento, aplicarMapeamento, assinatura, comprasPositivas, decodificar, ehPagamentoDeFatura, marcarRepetidas, formatoDoArquivo, lerCSV, lerOFX, lerXLSX,
   type LinhaExtrato, type Mapeamento,
@@ -31,7 +31,7 @@ function sugerir(dados: Dados, pendentes: TransacaoExtrato[]): Map<string, Suges
     const v = vinculoPara(dados, t, usados);
     if (v) {
       usados.add(v.id);
-      out.set(t.id, { escolha: { tipo: 'vinculo', lancamentoId: v.id }, motivo: v.status === 'previsto' ? `Combina com o previsto de ${dataCurta(v.data)}` : `Já lançado à mão em ${dataCurta(v.data)}`, vinculo: v });
+      out.set(t.id, { escolha: { tipo: 'vinculo', lancamentoId: v.id }, motivo: ehOutraPonta(v) ? `É a outra ponta da transferência de ${dataCurta(v.data)}, já lançada pela outra conta` : v.status === 'previsto' ? `Combina com o previsto de ${dataCurta(v.data)}` : `Já lançado à mão em ${dataCurta(v.data)}`, vinculo: v });
       continue;
     }
     const r = regraPara(dados, t);

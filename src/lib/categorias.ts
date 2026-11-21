@@ -1,4 +1,4 @@
-import type { Categoria, Lancamento } from '../types';
+import type { Categoria, Dados, Lancamento } from '../types';
 
 /** Categoria "mãe" de uma subcategoria (ou ela mesma, se não for sub). */
 export function raiz(c: Categoria, cats: Map<string, Categoria>): Categoria {
@@ -46,4 +46,15 @@ export function rotuloDocumento(l: Pick<Lancamento, 'documento' | 'nf'>): string
   const doc = l.documento?.numero ? `${NOME_DOC[l.documento.tipo]} ${l.documento.numero}` : '';
   if (l.nf) return doc ? `NF ${l.nf} (${doc})` : `NF ${l.nf}`;
   return doc;
+}
+
+/**
+ * Se a categoria pode ser excluída: só quando nem ela nem as subcategorias têm lançamentos.
+ * `ids` = a categoria e as subcategorias (que saem junto). `lancamentos` = quantos lançamentos impedem a exclusão.
+ */
+export function exclusaoDeCategoria(dados: Pick<Dados, 'categorias' | 'lancamentos'>, id: string): { ids: string[]; lancamentos: number; subs: number } {
+  const ids = [id, ...dados.categorias.filter((c) => c.paiId === id).map((c) => c.id)];
+  const set = new Set(ids);
+  const lancamentos = dados.lancamentos.filter((l) => l.categoriaId && set.has(l.categoriaId)).length;
+  return { ids, lancamentos, subs: ids.length - 1 };
 }

@@ -1,4 +1,4 @@
-import { nomeCategoria } from '../lib/categorias';
+import { exclusaoDeCategoria, nomeCategoria } from '../lib/categorias';
 import { Fragment, useState } from 'react';
 import type { Bloco, Categoria, Conta, Sentido, TipoConta } from '../types';
 import { useDados } from '../data/store';
@@ -23,6 +23,7 @@ export function Ajustes() {
   const [novaSub, setNovaSub] = useState<{ pai: Categoria; nome: string } | null>(null);
   const [renomear, setRenomear] = useState<{ id: string; nome: string; limite: string } | null>(null);
   const [zerar, setZerar] = useState(false);
+  const [apagarCat, setApagarCat] = useState<string | null>(null);
   const empresa = dados.empresa!;
   const sessao = useSessao();
 
@@ -56,7 +57,7 @@ export function Ajustes() {
 
       <section className="cartao">
         <h2>Categorias</h2>
-        <p className="ajuda">No lápis de uma categoria de gasto você também pode definir um limite por mês: o Painel mostra quanto já foi usado. Renomeie, esconda ou crie categorias. No botão + de uma categoria você cria subcategorias (ex.: Salários › cada funcionário); no relatório elas somam dentro da categoria. Categorias escondidas somem da lista de escolha, mas os lançamentos antigos continuam nos relatórios.</p>
+        <p className="ajuda">No lápis de uma categoria de gasto você também pode definir um limite por mês: o Painel mostra quanto já foi usado. Renomeie, esconda ou crie categorias. No botão + de uma categoria você cria subcategorias (ex.: Salários › cada funcionário); no relatório elas somam dentro da categoria. Categorias escondidas somem da lista de escolha, mas os lançamentos antigos continuam nos relatórios. Na lixeira você exclui de vez uma categoria que não tem nenhum lançamento.</p>
         {blocos.map((b) => {
           const raizes = dados.categorias.filter((c) => c.bloco === b.id && !c.paiId).sort((a, z) => a.ordem - z.ordem);
           const lista = raizes.flatMap((r) => [r, ...dados.categorias.filter((c) => c.paiId === r.id).sort((a, z) => a.ordem - z.ordem)]);
@@ -105,9 +106,13 @@ export function Ajustes() {
                                 <Icone nome="mais" tamanho={16} />
                               </button>
                             )}
+                            <button type="button" className="btn-icone" aria-label={`Excluir ${c.nome}`} title="Excluir" onClick={() => setApagarCat(apagarCat === c.id ? null : c.id)}>
+                              <Icone nome="lixeira" tamanho={16} />
+                            </button>
                           </>
                         )}
                       </li>
+                      {apagarCat === c.id && <ExcluirCategoria c={c} aoFechar={() => setApagarCat(null)} />}
                       {novaSub?.pai.id === c.id && (
                         <li className="sub">
                           <form
@@ -306,5 +311,38 @@ function FormConta({ conta, aoFechar }: { conta: Conta | null; aoFechar: () => v
         </div>
       </form>
     </Folha>
+  );
+}
+
+/** Confirmação de exclusão de uma categoria; se tiver lançamentos, explica o que fazer em vez de excluir. */
+function ExcluirCategoria({ c, aoFechar }: { c: Categoria; aoFechar: () => void }) {
+  const { dados, despachar } = useDados();
+  const x = exclusaoDeCategoria(dados, c.id);
+  if (x.lancamentos) {
+    return (
+      <li className="sub-aviso">
+        <div className="confirmar" role="alertdialog">
+          <p>
+            <strong>{c.nome}</strong> tem {x.lancamentos === 1 ? '1 lançamento' : `${x.lancamentos} lançamentos`}{x.subs ? ' (somando as subcategorias)' : ''}, então não dá para excluir.
+            Mude a categoria desses lançamentos (na aba Lançamentos, no lápis de cada um) e tente de novo, ou use o olho para só esconder a categoria.
+          </p>
+          <div className="linha-botoes">
+            <button type="button" className="btn" onClick={aoFechar}>Entendi</button>
+            {!c.oculta && <button type="button" className="btn btn-primario" onClick={() => { despachar({ t: 'categoria', categoria: { ...c, oculta: true } }); aoFechar(); }}>Esconder</button>}
+          </div>
+        </div>
+      </li>
+    );
+  }
+  return (
+    <li className="sub-aviso">
+      <Confirmar
+        perigo
+        texto={x.subs ? `Excluir "${c.nome}" e as ${x.subs === 1 ? 'sua subcategoria' : `suas ${x.subs} subcategorias`}? Nenhuma tem lançamentos.` : `Excluir "${c.nome}"? Ela não tem lançamentos.`}
+        rotuloOk="Excluir"
+        aoCancelar={aoFechar}
+        aoConfirmar={() => { despachar({ t: 'excluirCategoria', id: c.id }); aoFechar(); }}
+      />
+    </li>
   );
 }

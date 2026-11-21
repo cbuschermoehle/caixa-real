@@ -431,6 +431,10 @@ input:focus, select:focus { border-color: var(--acento); outline: 2px solid colo
 .partes-valor { width: 8.5em !important; flex: none; text-align: right; font-variant-numeric: tabular-nums; }
 .partes-desc { min-height: 38px !important; font-size: 0.88rem; }
 .partes-rodape { justify-content: space-between; }
+.lista-cat li.sub-aviso { display: block; }
+.partes li.parte-desconto { border-color: var(--saida, #e5484d); border-style: dashed; }
+.parte-etiqueta { font-size: 0.8rem; font-weight: 700; opacity: 0.85; }
+.partes-rodape { flex-wrap: wrap; }
 .soma-partes { font-weight: 750; text-align: right; font-variant-numeric: tabular-nums; }
 
 /* ---------- Nuvem ---------- */

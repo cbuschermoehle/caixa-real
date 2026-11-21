@@ -140,15 +140,40 @@ export function aprender(dados: Dados, t: TransacaoExtrato, categoriaId: string,
   return { id: novoId(), trecho, sentido, categoriaId, usos: 1 };
 }
 
-/** Divide uma linha do extrato em vários lançamentos (ex.: fatura do cartão). A soma precisa bater com o valor da linha. */
-export function confirmarDividida(t: TransacaoExtrato, partes: { categoriaId: string; valor: number; descricao?: string }[]) {
-  const soma = partes.reduce((a, p) => a + p.valor, 0);
-  if (soma !== Math.abs(t.valor) || partes.some((p) => !p.categoriaId || p.valor <= 0)) return null;
+/** Parte de uma linha dividida. `sentido` diferente do da linha = desconto (ex.: juros da antecipação num borderô). */
+export interface ParteDivisao { categoriaId: string; valor: number; descricao?: string; sentido?: Sentido }
+
+/** Quanto a divisão soma no sentido da linha: partes do mesmo sentido somam, as de sentido oposto (descontos) subtraem. */
+export function somaDaDivisao(t: TransacaoExtrato, partes: ParteDivisao[]): number {
   const sentido = sentidoDe(t);
-  const lancs: Lancamento[] = partes.map((p) => ({
-    id: novoId(), tipo: sentido, valor: p.valor, data: t.data, status: 'pago', contaId: t.contaId,
+  return partes.reduce((a, p) => a + ((p.sentido ?? sentido) === sentido ? p.valor : -p.valor), 0);
+}
+
+/**
+ * Divide uma linha do extrato em vários lançamentos (ex.: fatura do cartão, ou borderô com receita cheia por cliente
+ * menos os juros da antecipação). Partes no mesmo sentido menos os descontos precisam fechar o valor da linha.
+ */
+export function confirmarDividida(t: TransacaoExtrato, partes: ParteDivisao[]) {
+  const sentido = sentidoDe(t);
+  if (somaDaDivisao(t, partes) !== Math.abs(t.valor) || partes.some((p) => !p.categoriaId || p.valor <= 0)) return null;
+  // A primeira parte precisa ser do sentido da linha (é ela que fica ligada à linha do extrato).
+  const ordenadas = [...partes.filter((p) => (p.sentido ?? sentido) === sentido), ...partes.filter((p) => (p.sentido ?? sentido) !== sentido)];
+  const lancs: Lancamento[] = ordenadas.map((p) => ({
+    id: novoId(), tipo: p.sentido ?? sentido, valor: p.valor, data: t.data, status: 'pago', contaId: t.contaId,
     categoriaId: p.categoriaId, descricao: p.descricao?.trim() || t.descricao, origem: 'extrato', criadoEm: hoje(), extratoId: t.id,
     ...(t.fatura ? { fatura: t.fatura } : {}),
   }));
   return { transacao: { ...t, situacao: 'confirmada' as const, lancamentoId: lancs[0].id }, lancamento: lancs[0], extras: lancs.slice(1) };
+}
+
+/** Categoria sugerida para o desconto: juros de antecipação (numa entrada) ou estorno/outras receitas (numa saída). */
+export function categoriaDoDesconto(dados: Dados, t: TransacaoExtrato) {
+  const oposto: Sentido = sentidoDe(t) === 'entrada' ? 'saida' : 'entrada';
+  const nomes = oposto === 'saida' ? ['juros e taxas de antecipacao', 'tarifas bancarias'] : ['outras receitas'];
+  const cats = dados.categorias.filter((c) => c.sentido === oposto && !c.oculta);
+  for (const n of nomes) {
+    const c = cats.find((x) => normalizar(x.nome) === normalizar(n));
+    if (c) return c;
+  }
+  return undefined;
 }

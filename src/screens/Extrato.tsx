@@ -2,7 +2,7 @@ import { emArvore, nomeCategoria, rotuloDocumento } from '../lib/categorias';
 import { useMemo, useState } from 'react';
 import type { Dados, Importacao, Lancamento, Regra, TransacaoExtrato } from '../types';
 import { useBlocos, useDados } from '../data/store';
-import { aprender, confirmarDividida, confirmarLinha, diferencaDaBaixa, previstosParaBaixa, regraPara, sentidoDe, vinculoPara, type Escolha } from '../lib/conciliar';
+import { aprender, categoriaDoDesconto, confirmarDividida, confirmarLinha, diferencaDaBaixa, previstosParaBaixa, regraPara, sentidoDe, vinculoPara, type Escolha } from '../lib/conciliar';
 import {
   adivinharMapeamento, aplicarMapeamento, assinatura, comprasPositivas, decodificar, ehPagamentoDeFatura, marcarRepetidas, formatoDoArquivo, lerCSV, lerOFX, lerXLSX,
   type LinhaExtrato, type Mapeamento,
@@ -474,42 +474,54 @@ function Importar({ aoFechar }: { aoFechar: () => void }) {
 
 // ---------- Dividir uma linha ----------
 
-interface Parte { id: string; categoriaId: string; valor: string; descricao: string }
+/** `desconto`: parte no sentido oposto ao da linha, que diminui o total (ex.: juros da antecipação num borderô). */
+interface Parte { id: string; categoriaId: string; valor: string; descricao: string; desconto?: boolean }
 
 function Dividir({ t, aoFechar }: { t: TransacaoExtrato; aoFechar: () => void }) {
   const { dados, despachar } = useDados();
   const total = Math.abs(t.valor);
-  const nova = (valor = ''): Parte => ({ id: novoId(), categoriaId: '', valor, descricao: '' });
+  const sentido = sentidoDe(t);
+  const oposto = sentido === 'entrada' ? 'saida' : 'entrada';
+  const nomeDesconto = sentido === 'entrada' ? 'desconto (juros, tarifa)' : 'devolução/estorno';
+  const nova = (valor = '', desconto = false): Parte => ({ id: novoId(), categoriaId: desconto ? (categoriaDoDesconto(dados, t)?.id ?? '') : '', valor, descricao: '', desconto });
   const [partes, setPartes] = useState<Parte[]>([nova(), nova()]);
   const [erro, setErro] = useState('');
-  const somado = partes.reduce((a, p) => a + (parseValor(p.valor) ?? 0), 0);
+  const somado = partes.reduce((a, p) => a + (p.desconto ? -1 : 1) * (parseValor(p.valor) ?? 0), 0);
   const falta = total - somado;
+  const temDesconto = partes.some((p) => p.desconto);
   const mudar = (id: string, c: Partial<Parte>) => setPartes((ps) => ps.map((p) => (p.id === id ? { ...p, ...c } : p)));
 
   function confirmar(e: React.FormEvent) {
     e.preventDefault();
-    const lista = partes.filter((p) => p.categoriaId || p.valor.trim());
+    const lista = partes.filter((p) => (p.categoriaId && !p.desconto) || p.valor.trim());
     if (lista.some((p) => !p.categoriaId)) return setErro('Escolha a categoria de cada parte.');
     if (lista.some((p) => (parseValor(p.valor) ?? 0) <= 0)) return setErro('Cada parte precisa de um valor maior que zero.');
+    if (!lista.some((p) => !p.desconto)) return setErro('Coloque pelo menos uma parte que não seja desconto.');
     if (falta !== 0) return setErro(falta > 0 ? `Ainda faltam ${brl(falta)} para fechar o valor do extrato.` : `As partes passam ${brl(-falta)} do valor do extrato.`);
-    const r = confirmarDividida(t, lista.map((p) => ({ categoriaId: p.categoriaId, valor: parseValor(p.valor)!, descricao: p.descricao })));
+    const r = confirmarDividida(t, lista.map((p) => ({ categoriaId: p.categoriaId, valor: parseValor(p.valor)!, descricao: p.descricao, sentido: p.desconto ? oposto : sentido })));
     if (!r) return setErro('Confira as categorias e os valores.');
     despachar({ t: 'conciliar', itens: [r] });
     aoFechar();
   }
 
   return (
-    <Folha titulo="Dividir em categorias" aoFechar={aoFechar} tom={sentidoDe(t)}>
+    <Folha titulo="Dividir em categorias" aoFechar={aoFechar} tom={sentido}>
       <form className="form" onSubmit={confirmar} noValidate>
         <div className="previa-ok">
           <p><strong>{t.descricao}</strong></p>
-          <p className="ajuda">{dataBR(t.data)} · {brl(t.valor)}. Ex.: a fatura do cartão separada em combustível, material e software.</p>
+          <p className="ajuda">
+            {dataBR(t.data)} · {brl(t.valor)}.{' '}
+            {sentido === 'entrada'
+              ? 'Ex.: um borderô com a receita cheia de cada cliente e, num desconto, os juros da antecipação.'
+              : 'Ex.: a fatura do cartão separada em combustível, material e software.'}
+          </p>
         </div>
         <ul className="partes">
           {partes.map((p, i) => (
-            <li key={p.id}>
+            <li key={p.id} className={p.desconto ? 'parte-desconto' : undefined}>
+              {p.desconto && <span className="parte-etiqueta">− {sentido === 'entrada' ? 'Desconto: sai do total, conta como saída' : 'Devolução: abate do total, conta como entrada'}</span>}
               <div className="partes-linha">
-                <SeletorCategoria id={`d-cat-${p.id}`} valor={p.categoriaId} aoMudar={(v) => mudar(p.id, { categoriaId: v })} categorias={dados.categorias} sentido={sentidoDe(t)} />
+                <SeletorCategoria id={`d-cat-${p.id}`} valor={p.categoriaId} aoMudar={(v) => mudar(p.id, { categoriaId: v })} categorias={dados.categorias} sentido={p.desconto ? oposto : sentido} />
                 <input id={`d-val-${p.id}`} inputMode="decimal" placeholder="0,00" value={p.valor} onChange={(e) => mudar(p.id, { valor: e.target.value })} aria-label={`Valor da parte ${i + 1}`} className="partes-valor" />
                 {partes.length > 1 && (
                   <button type="button" className="btn-icone" aria-label={`Remover parte ${i + 1}`} onClick={() => setPartes((ps) => ps.filter((x) => x.id !== p.id))}><Icone nome="x" tamanho={16} /></button>
@@ -521,8 +533,9 @@ function Dividir({ t, aoFechar }: { t: TransacaoExtrato; aoFechar: () => void })
         </ul>
         <div className="linha-botoes partes-rodape">
           <button type="button" className="btn btn-link" onClick={() => setPartes((ps) => [...ps, nova()])}>+ Outra parte</button>
+          <button type="button" className="btn btn-link" onClick={() => setPartes((ps) => [...ps, nova(falta < 0 ? valorParaCampo(-falta) : '', true)])}>− {nomeDesconto[0].toUpperCase() + nomeDesconto.slice(1)}</button>
           {falta > 0 && <button type="button" className="btn btn-link" onClick={() => {
-            const vazia = partes.find((p) => !p.valor.trim());
+            const vazia = partes.find((p) => !p.valor.trim() && !p.desconto);
             if (vazia) mudar(vazia.id, { valor: valorParaCampo(falta) });
             else setPartes((ps) => [...ps, nova(valorParaCampo(falta))]);
           }}>Usar o que falta ({brl(falta)})</button>}
@@ -530,9 +543,12 @@ function Dividir({ t, aoFechar }: { t: TransacaoExtrato; aoFechar: () => void })
         <p className={`soma-partes ${falta === 0 ? 'pos' : 'neg'}`}>
           {falta === 0 ? <>Fechou: {brl(total)}</> : falta > 0 ? <>Faltam {brl(falta)} de {brl(total)}</> : <>Passou {brl(-falta)} de {brl(total)}</>}
         </p>
+        {falta < 0 && !temDesconto && (
+          <p className="ajuda">Se o banco descontou juros ou tarifa, use <strong>− {nomeDesconto[0].toUpperCase() + nomeDesconto.slice(1)}</strong>: a diferença de {brl(-falta)} já vem preenchida.</p>
+        )}
         {erro && <p className="erro">{erro}</p>}
         <div className="acoes-form">
-          <button type="submit" className={`btn btn-grande btn-${sentidoDe(t)}`} disabled={falta !== 0}>Confirmar divisão</button>
+          <button type="submit" className={`btn btn-grande btn-${sentido}`} disabled={falta !== 0}>Confirmar divisão</button>
         </div>
       </form>
     </Folha>

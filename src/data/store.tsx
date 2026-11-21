@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useReducer, useRef, type ReactNode } from 'react';
 import { VERSAO_PLANO, atualizarPlano, blocosDe } from './planos';
 import { sincronizarFaturas } from '../lib/cartao';
+import { exclusaoDeCategoria } from '../lib/categorias';
 import type { Avaliacao, Bem, Categoria, Conta, Dados, Empresa, Importacao, Lancamento, ModeloColunas, Pendente, Regra, TransacaoExtrato } from '../types';
 
 /*
@@ -20,6 +21,7 @@ export type Acao =
   | { t: 'empresa'; empresa: Empresa }
   | { t: 'conta'; conta: Conta }
   | { t: 'categoria'; categoria: Categoria }
+  | { t: 'excluirCategoria'; id: string }
   | { t: 'lancamentos'; lancamentos: Lancamento[] }
   | { t: 'lancamento'; lancamento: Lancamento }
   | { t: 'excluir'; ids: string[] }
@@ -62,6 +64,13 @@ export function reducer(d: Dados, a: Acao): Dados {
       return { ...d, contas: upsert(d.contas, a.conta) };
     case 'categoria':
       return { ...d, categorias: upsert(d.categorias, a.categoria) };
+    case 'excluirCategoria': {
+      // Só exclui se nem ela nem as subcategorias tiverem lançamentos (a tela também confere).
+      const x = exclusaoDeCategoria(d, a.id);
+      if (x.lancamentos) return d;
+      const ids = new Set(x.ids);
+      return { ...d, categorias: d.categorias.filter((c) => !ids.has(c.id)), regras: d.regras?.filter((r) => !ids.has(r.categoriaId)) };
+    }
     case 'lancamentos':
       return { ...d, lancamentos: [...d.lancamentos, ...a.lancamentos] };
     case 'lancamento':

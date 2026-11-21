@@ -130,3 +130,57 @@ describe('desfazer importação', () => {
     expect(r.lancamentos.find((x) => x.id === 'prev')).toMatchObject({ status: 'previsto', extratoId: undefined });
   });
 });
+
+import { categoriaDoDesconto, confirmarDividida, somaDaDivisao } from './conciliar';
+import { exclusaoDeCategoria } from './categorias';
+describe('dividir com desconto (borderô de antecipação)', () => {
+  const t: TransacaoExtrato = { id: 'tb', contaId: 'pj', importacaoId: 'i', chave: 'k', data: '2026-11-20', descricao: 'CREDITO BORDERO', valor: 529_305, situacao: 'pendente' };
+  const receitas = [56_000, 230_000, 15_000, 10_384, 227_000].map((valor, i) => ({ categoriaId: 'venda', valor, descricao: `Cliente ${i + 1}` }));
+  it('receita cheia por cliente menos os juros fecha no líquido do extrato', () => {
+    const d = base();
+    const juros = categoriaDoDesconto(d, t)!;
+    expect(juros.nome).toBe('Juros e taxas de antecipação');
+    const partes = [...receitas, { categoriaId: juros.id, valor: 9_079, sentido: 'saida' as const }];
+    expect(somaDaDivisao(t, partes)).toBe(529_305);
+    const r = confirmarDividida(t, partes)!;
+    const todos = [r.lancamento, ...r.extras];
+    expect(r.lancamento.tipo).toBe('entrada');
+    expect(todos.filter((x) => x.tipo === 'entrada').reduce((a, x) => a + x.valor, 0)).toBe(538_384);
+    expect(todos.filter((x) => x.tipo === 'saida').map((x) => [x.valor, x.categoriaId])).toEqual([[9_079, juros.id]]);
+    expect(todos.every((x) => x.extratoId === 'tb' && x.contaId === 'pj')).toBe(true);
+  });
+  it('recusa quando o desconto não fecha ou quando só há desconto', () => {
+    expect(confirmarDividida(t, receitas)).toBeNull();
+    expect(confirmarDividida(t, [...receitas, { categoriaId: 'j', valor: 9_000, sentido: 'saida' }])).toBeNull();
+    expect(confirmarDividida({ ...t, valor: -100 }, [{ categoriaId: 'j', valor: 100, sentido: 'entrada' }])).toBeNull();
+  });
+  it('saída com uma parte de estorno (simétrico)', () => {
+    const s = { ...t, valor: -50_000 };
+    const r = confirmarDividida(s, [{ categoriaId: 'a', valor: 30_000 }, { categoriaId: 'b', valor: 25_000 }, { categoriaId: 'c', valor: 5_000, sentido: 'entrada' }])!;
+    expect([r.lancamento, ...r.extras].map((x) => [x.tipo, x.valor])).toEqual([['saida', 30_000], ['saida', 25_000], ['entrada', 5_000]]);
+  });
+});
+
+describe('excluir categoria', () => {
+  it('exclui (com subcategorias e regras) só quando não há lançamentos', () => {
+    const d = base();
+    const en = cat(d, 'Energia');
+    const s1 = sub(en, 'Matriz');
+    d.categorias.push(s1);
+    d.regras = [{ id: 'r', trecho: 'CELESC', sentido: 'saida', categoriaId: s1.id, usos: 1 }];
+    expect(exclusaoDeCategoria(d, en.id)).toEqual({ ids: [en.id, s1.id], lancamentos: 0, subs: 1 });
+    const r = reducer(d, { t: 'excluirCategoria', id: en.id });
+    expect(r.categorias.some((c) => c.id === en.id || c.id === s1.id)).toBe(false);
+    expect(r.regras).toEqual([]);
+  });
+  it('não exclui se a categoria ou uma subcategoria tem lançamento', () => {
+    const d = base();
+    const en = cat(d, 'Energia');
+    const s1 = sub(en, 'Filial');
+    d.categorias.push(s1);
+    d.lancamentos.push(l({ valor: 100, categoriaId: s1.id }));
+    expect(exclusaoDeCategoria(d, en.id).lancamentos).toBe(1);
+    expect(reducer(d, { t: 'excluirCategoria', id: en.id })).toBe(d);
+    expect(reducer(d, { t: 'excluirCategoria', id: s1.id })).toBe(d);
+  });
+});

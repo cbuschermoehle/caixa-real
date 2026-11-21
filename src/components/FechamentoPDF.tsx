@@ -31,9 +31,9 @@ export function FechamentoPDF({ dados, mes, comPrevistos }: { dados: Dados; mes:
   const nomeDo = (b: Bloco) => blocos.find((x) => x.id === b)!.nome;
   const cats = new Map(dados.categorias.map((x) => [x.id, x]));
   const contas = new Map(dados.contas.map((x) => [x.id, x]));
-  const inicioMes = somaDias(`${mes}-01`, -1);
   const fimMes = somaDias(`${somaMesesMes(mes, 1)}-01`, -1);
-  const saldoIni = saldos(dados, inicioMes).total;
+  // Abertura do dia 1: o saldo inicial cadastrado com data do dia 1 já conta.
+  const saldoIni = saldos(dados, `${mes}-01`, true).total;
   const saldoFim = saldos(dados, fimMes).total;
   const h = hoje();
 
@@ -50,7 +50,7 @@ export function FechamentoPDF({ dados, mes, comPrevistos }: { dados: Dados; mes:
   const semCategoria = doMes.filter((l) => l.tipo !== 'transferencia' && !cats.get(l.categoriaId ?? ''));
 
   const base = c.blocos.entradas.realizado + (comPrevistos ? c.blocos.entradas.previsto : 0);
-  const pct = (v: number) => (base ? `${Math.round((v / base) * 100)}%` : '–');
+  const pct = (v: number) => (base ? `${((v / base) * 100).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%` : '–');
   const cols = (real: number, prev: number) => {
     const total = real + (comPrevistos ? prev : 0);
     return (

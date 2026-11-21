@@ -79,7 +79,7 @@ export function reducer(d: Dados, a: Acao): Dados {
       const ids = new Set(a.ids);
       const lancamentos = d.lancamentos.filter((l) => !ids.has(l.id));
       // Linha do extrato volta para revisão quando nenhum lançamento ligado a ela sobra (vale para linhas divididas).
-      const ligadas = new Set(lancamentos.map((l) => l.extratoId).filter(Boolean));
+      const ligadas = new Set(lancamentos.flatMap((l) => [l.extratoId, l.extratoOutraPontaId]).filter(Boolean));
       const extrato = d.extrato?.map((t) => (t.situacao === 'confirmada' && !ligadas.has(t.id) ? { ...t, situacao: 'pendente' as const, lancamentoId: undefined } : t));
       return { ...d, lancamentos, extrato };
     }
@@ -108,6 +108,12 @@ export function reducer(d: Dados, a: Acao): Dados {
       // Tira as linhas do arquivo e o que foi lançado a partir delas. Previstos que tinham sido baixados voltam a ser previstos.
       const linhas = new Set((d.extrato ?? []).filter((t) => t.importacaoId === a.id).map((t) => t.id));
       const lancamentos = d.lancamentos
+        // Transferência com as duas pontas: se sai só a linha de uma conta, a transferência fica, presa à linha da outra.
+        .map((l) => {
+          if (l.extratoOutraPontaId && linhas.has(l.extratoOutraPontaId)) return { ...l, extratoOutraPontaId: undefined };
+          if (l.extratoId && linhas.has(l.extratoId) && l.extratoOutraPontaId) return { ...l, extratoId: l.extratoOutraPontaId, extratoOutraPontaId: undefined };
+          return l;
+        })
         .filter((l) => !(l.extratoId && linhas.has(l.extratoId) && l.origem === 'extrato'))
         .map((l) => (l.extratoId && linhas.has(l.extratoId) ? { ...l, status: 'previsto' as const, extratoId: undefined } : l));
       return {

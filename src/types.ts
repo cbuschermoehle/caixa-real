@@ -119,6 +119,8 @@ export interface Lancamento {
   criadoEm: string;
   /** Linha do extrato que confirmou este lançamento (conciliado). */
   extratoId?: string;
+  /** Só em transferências: linha do extrato da outra conta (a outra ponta da mesma transferência). */
+  extratoOutraPontaId?: string;
   /** OS ou pedido que originou a conta a receber. */
   documento?: Documento;
   /** Número da nota fiscal (numeração própria, diferente da OS/pedido). */

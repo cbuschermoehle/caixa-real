@@ -17,11 +17,14 @@ export function efeitoNaConta(l: Lancamento, conta: Conta): number {
   return e;
 }
 
-/** Saldo real de uma conta no fim do dia `ate`. */
-export function saldoConta(dados: Dados, conta: Conta, ate: string): number {
+/**
+ * Saldo real de uma conta no fim do dia `ate`.
+ * Com `inicioDoDia`, é o saldo na abertura do dia: já conta o saldo inicial com essa data, mas não os lançamentos do dia.
+ */
+export function saldoConta(dados: Dados, conta: Conta, ate: string, inicioDoDia = false): number {
   let s = conta.dataSaldoInicial <= ate ? conta.saldoInicial : 0;
   for (const l of dados.lancamentos) {
-    if (l.status !== 'pago' || l.data > ate) continue;
+    if (l.status !== 'pago' || l.data > ate || (inicioDoDia && l.data === ate)) continue;
     s += efeitoNaConta(l, conta);
   }
   return s;
@@ -40,9 +43,9 @@ export interface Saldos {
   cartoes: number;
 }
 
-export function saldos(dados: Dados, ate: string): Saldos {
+export function saldos(dados: Dados, ate: string, inicioDoDia = false): Saldos {
   const porConta = dados.contas
-    .map((conta) => ({ conta, saldo: saldoConta(dados, conta, ate) }))
+    .map((conta) => ({ conta, saldo: saldoConta(dados, conta, ate, inicioDoDia) }))
     .filter((x) => !x.conta.arquivada || x.saldo !== 0);
   const soma = (f: (c: Conta) => boolean) => porConta.filter((x) => f(x.conta)).reduce((a, x) => a + x.saldo, 0);
   const disponivel = soma(ehDisponivel);

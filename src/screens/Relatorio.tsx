@@ -2,11 +2,11 @@ import { Fragment, useState, type ReactNode } from 'react';
 import type { Bloco } from '../types';
 import { useDados } from '../data/store';
 import { blocosDe, ehPessoal, linhasDoRelatorio } from '../data/planos';
-import { cascata, pontoEquilibrio, saldos } from '../lib/calc';
+import { cascata, conferenciaDoMes, pontoEquilibrio } from '../lib/calc';
 import { rendaComprometida } from '../lib/futuro';
-import { brl, dataBR, hoje, mesDe, nomeMes, somaDias, somaMesesMes } from '../lib/format';
+import { brl, dataBR, hoje, mesDe, pctDe, nomeMes, somaMesesMes } from '../lib/format';
 import { BarraComprometida, Chave, Icone } from '../components/ui';
-import { FechamentoPDF, imprimirFechamento } from '../components/FechamentoPDF';
+import { AvisoFechamento, FechamentoPDF, imprimirFechamento } from '../components/FechamentoPDF';
 
 export function Relatorio() {
   const { dados } = useDados();
@@ -19,11 +19,11 @@ export function Relatorio() {
   const blocos = blocosDe(dados.empresa);
   const rc = rendaComprometida(dados, mes);
   const base = c.blocos.entradas.realizado + (comPrevistos ? c.blocos.entradas.previsto : 0);
-  const pct = (v: number) => (base ? `${((v / base) * 100).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%` : '–');
-  const fimMes = somaDias(`${somaMesesMes(mes, 1)}-01`, -1);
+  const pct = (v: number) => pctDe(v, base);
   // Abertura do dia 1: o saldo inicial cadastrado com data do dia 1 já conta.
-  const saldoIni = saldos(dados, `${mes}-01`, true).total;
-  const saldoFim = saldos(dados, fimMes).total;
+  const conf = conferenciaDoMes(dados, mes);
+  const saldoIni = conf.inicio;
+  const saldoFim = conf.fim;
 
   const alternar = (b: Bloco) =>
     setAbertos((s) => {
@@ -141,6 +141,7 @@ export function Relatorio() {
             <div><dt>Variação do caixa (realizado)</dt><dd>{brl(c.variacao[0])}</dd></div>
             <div><dt>Saldo no fim do mês</dt><dd><strong>{brl(saldoFim)}</strong></dd></div>
           </dl>
+          <AvisoFechamento conf={conf} formatar={brl} />
           <p className="ajuda">Soma de todas as contas, com aplicações e sem cartões de crédito. Transferências entre contas não alteram esse total; compras no cartão contam no mês em que a fatura vence.</p>
         </section>
         {pessoal ? (

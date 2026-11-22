@@ -197,6 +197,8 @@ export interface Dados {
    * O primeiro perfil fica na raiz, assim versões antigas do app continuam abrindo a empresa.
    */
   outrosPerfis?: Dados[];
+  /** Só no formato guardado na nuvem: marca do último envio (para saber, ao reabrir, se ele chegou). */
+  envio?: string;
   /** Lançamentos rápidos ainda não completados. Não mexem no saldo. */
   pendentes?: Pendente[];
   /** Valor atual dos investimentos, por corretora e tipo (histórico). */

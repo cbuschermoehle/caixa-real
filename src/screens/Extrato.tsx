@@ -58,6 +58,9 @@ export function Extrato() {
 
   const escolhaDe = (t: TransacaoExtrato) => (t.id in escolhas ? decodificarEscolha(escolhas[t.id]) : sugestoes.get(t.id)?.escolha ?? null);
   const prontas = pendentes.filter((t) => escolhaDe(t));
+  // Linhas com data antes do saldo inicial da conta: entram no relatório, mas não no saldo da conta (o fechamento não bate).
+  const antesDoInicio = [...new Set(pendentes.filter((t) => { const c = contas.get(t.contaId); return !!c?.dataSaldoInicial && t.data < c.dataSaldoInicial; }).map((t) => t.contaId))]
+    .map((id) => ({ conta: contas.get(id)!, qtd: pendentes.filter((t) => t.contaId === id && t.data < contas.get(id)!.dataSaldoInicial).length }));
 
   function confirmar(lista: TransacaoExtrato[]) {
     const itens: { transacao: TransacaoExtrato; lancamento?: Lancamento; extras?: Lancamento[] }[] = [];
@@ -119,6 +122,12 @@ export function Extrato() {
             <p className="ok centro"><Icone nome="check" tamanho={16} /> Tudo revisado. O saldo está em dia com o extrato.</p>
           ) : (
             <>
+              {antesDoInicio.map(({ conta: c, qtd }) => (
+                <p key={c.id} className="aviso-leve" role="status">
+                  Atenção: {qtd === 1 ? '1 linha' : `${qtd} linhas`} de {c.nome} {qtd === 1 ? 'é' : 'são'} de antes de {dataBR(c.dataSaldoInicial)}, a data do saldo inicial dessa conta.
+                  Elas não vão mudar o saldo da conta e o fechamento do mês não vai bater. Se a conta já existia antes, mude a data e o valor do saldo inicial em Ajustes › Contas antes de confirmar.
+                </p>
+              ))}
               <p className="ajuda">{pendentes.length} para revisar. {prontas.length < pendentes.length && `${pendentes.length - prontas.length} ainda sem categoria.`}</p>
               <ul className="inbox">
                 {pendentes.map((t) => {

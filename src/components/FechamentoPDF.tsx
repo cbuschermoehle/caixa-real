@@ -3,9 +3,9 @@ import { createPortal } from 'react-dom';
 import type { Bloco, Dados, Lancamento } from '../types';
 import { blocosDe, ehPessoal, linhasDoRelatorio } from '../data/planos';
 import { dataDeCaixa } from '../lib/cartao';
-import { cascata, saldoConta, saldos, type LinhaCategoria } from '../lib/calc';
+import { cascata, conferenciaDoMes, saldoConta, type Conferencia, type LinhaCategoria } from '../lib/calc';
 import { nomeCategoria, raiz, rotuloDocumento } from '../lib/categorias';
-import { brlReal as brl, dataBR, hoje, mesDe, nomeMes, somaDias, somaMesesMes } from '../lib/format';
+import { brlReal as brl, dataBR, hoje, mesDe, pctDe, nomeMes, somaDias, somaMesesMes } from '../lib/format';
 
 /*
  * Relatório de fechamento do mês, só para impressão.
@@ -33,8 +33,9 @@ export function FechamentoPDF({ dados, mes, comPrevistos }: { dados: Dados; mes:
   const contas = new Map(dados.contas.map((x) => [x.id, x]));
   const fimMes = somaDias(`${somaMesesMes(mes, 1)}-01`, -1);
   // Abertura do dia 1: o saldo inicial cadastrado com data do dia 1 já conta.
-  const saldoIni = saldos(dados, `${mes}-01`, true).total;
-  const saldoFim = saldos(dados, fimMes).total;
+  const conf = conferenciaDoMes(dados, mes);
+  const saldoIni = conf.inicio;
+  const saldoFim = conf.fim;
   const h = hoje();
 
   const doMes = dados.lancamentos
@@ -50,7 +51,7 @@ export function FechamentoPDF({ dados, mes, comPrevistos }: { dados: Dados; mes:
   const semCategoria = doMes.filter((l) => l.tipo !== 'transferencia' && !cats.get(l.categoriaId ?? ''));
 
   const base = c.blocos.entradas.realizado + (comPrevistos ? c.blocos.entradas.previsto : 0);
-  const pct = (v: number) => (base ? `${((v / base) * 100).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%` : '–');
+  const pct = (v: number) => pctDe(v, base);
   const cols = (real: number, prev: number) => {
     const total = real + (comPrevistos ? prev : 0);
     return (
@@ -188,6 +189,7 @@ export function FechamentoPDF({ dados, mes, comPrevistos }: { dados: Dados; mes:
               <tr className="p-forte"><th>Saldo no fim do mês</th><td className="num">{brl(saldoFim)}</td></tr>
             </tbody>
           </table>
+          <AvisoFechamento conf={conf} formatar={brl} />
         </div>
         <div>
           <h2>Saldo por conta em {dataBR(fimMes)}</h2>
@@ -211,5 +213,31 @@ export function FechamentoPDF({ dados, mes, comPrevistos }: { dados: Dados; mes:
       <p className="p-rodape">MicroCaixa Fácil · regime de caixa · valores em reais</p>
     </div>,
     document.body,
+  );
+}
+
+/** Aviso quando início + variação do caixa não dá o saldo do fim do mês, com as causas encontradas. */
+export function AvisoFechamento({ conf, formatar }: { conf: Conferencia; formatar: (v: number) => string }) {
+  if (conf.diferenca === 0) return null;
+  const qtd = (n: number) => (n === 1 ? '1 lançamento' : `${n} lançamentos`);
+  return (
+    <div className="aviso-leve aviso-fechamento" role="status">
+      <strong>O fechamento não bate.</strong> Início ({formatar(conf.inicio)}) + variação ({formatar(conf.variacao)}) dá {formatar(conf.inicio + conf.variacao)},
+      {' '}mas o saldo no fim é {formatar(conf.fim)}: diferença de {formatar(conf.diferenca)}.
+      <ul>
+        {conf.antesDoInicio.map((x) => (
+          <li key={x.conta.id}>
+            {x.conta.nome}: {qtd(x.qtd)} ({formatar(x.valor)}) com data antes do saldo inicial da conta ({dataBR(x.conta.dataSaldoInicial)}). Eles contam na variação, mas não no saldo.
+            {' '}Acerte a data e o valor do saldo inicial em Ajustes › Contas.
+          </li>
+        ))}
+        {conf.inicioNoMes.map((c) => (
+          <li key={c.id}>{c.nome}: o saldo inicial ({formatar(c.saldoInicial)}) foi cadastrado em {dataBR(c.dataSaldoInicial)}, no meio do mês. Ele entra no saldo do fim, mas não na variação.</li>
+        ))}
+        {!conf.antesDoInicio.length && !conf.inicioNoMes.length && (
+          <li>Confira pagamentos de fatura de cartão (valor pago diferente das compras da fatura) e transferências para contas arquivadas.</li>
+        )}
+      </ul>
+    </div>
   );
 }

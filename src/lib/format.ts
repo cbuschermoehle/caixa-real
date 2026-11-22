@@ -144,3 +144,9 @@ export function novoId(): string {
 
 /** "nov/26" para eixos de meses. */
 export const mesCurto = (iso: string) => `${MESES_CURTOS[Number(iso.slice(5, 7)) - 1]}/${iso.slice(2, 4)}`;
+
+/** Percentual de `v` sobre `base`, com duas casas (ex.: 12,34%). Sem base, mostra "–". */
+export function pctDe(v: number, base: number): string {
+  if (!base) return '–';
+  return `${((v / base) * 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`;
+}

@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useReducer, useRef, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useRef, type ReactNode } from 'react';
 import { VERSAO_PLANO, atualizarPlano, blocosDe } from './planos';
 import { sincronizarFaturas } from '../lib/cartao';
 import { exclusaoDeCategoria } from '../lib/categorias';
@@ -71,23 +71,38 @@ export function reducer(d: Dados, a: Acao): Dados {
       const ids = new Set(x.ids);
       return { ...d, categorias: d.categorias.filter((c) => !ids.has(c.id)), regras: d.regras?.filter((r) => !ids.has(r.categoriaId)) };
     }
-    case 'lancamentos':
-      return { ...d, lancamentos: [...d.lancamentos, ...a.lancamentos] };
+    case 'lancamentos': {
+      // Por id: aplicar a mesma ação duas vezes (ex.: refeita depois de salvar em outro aparelho) não duplica.
+      let lancamentos = d.lancamentos;
+      for (const l of a.lancamentos) lancamentos = upsert(lancamentos, l);
+      return { ...d, lancamentos };
+    }
     case 'lancamento':
       return { ...d, lancamentos: upsert(d.lancamentos, a.lancamento) };
     case 'excluir': {
       const ids = new Set(a.ids);
+      const saem = d.lancamentos.filter((l) => ids.has(l.id));
+      if (!saem.length) return d;
       const lancamentos = d.lancamentos.filter((l) => !ids.has(l.id));
-      // Linha do extrato volta para revisão quando nenhum lançamento ligado a ela sobra (vale para linhas divididas).
+      // Só as linhas do extrato dos lançamentos excluídos podem voltar para revisão, e só quando nenhum
+      // lançamento ligado a elas sobra (vale para linhas divididas). As demais linhas confirmadas ficam como estão.
+      const afetadas = new Set(saem.flatMap((l) => [l.extratoId, l.extratoOutraPontaId]).filter(Boolean));
       const ligadas = new Set(lancamentos.flatMap((l) => [l.extratoId, l.extratoOutraPontaId]).filter(Boolean));
-      const extrato = d.extrato?.map((t) => (t.situacao === 'confirmada' && !ligadas.has(t.id) ? { ...t, situacao: 'pendente' as const, lancamentoId: undefined } : t));
+      const sobra = new Set(lancamentos.map((l) => l.id));
+      const extrato = d.extrato?.map((t) =>
+        t.situacao === 'confirmada' && (afetadas.has(t.id) || (t.lancamentoId && ids.has(t.lancamentoId))) && !ligadas.has(t.id) && !(t.lancamentoId && sobra.has(t.lancamentoId))
+          ? { ...t, situacao: 'pendente' as const, lancamentoId: undefined }
+          : t,
+      );
       return { ...d, lancamentos, extrato };
     }
     case 'importar': {
       const modelos = (d.modelos ?? []).filter((m) => !(a.modelo && m.contaId === a.modelo.contaId && m.assinatura === a.modelo.assinatura));
+      const jaTem = new Set((d.extrato ?? []).map((t) => t.id));
+      if ((d.importacoes ?? []).some((i) => i.id === a.importacao.id)) return d;
       return {
         ...d,
-        extrato: [...(d.extrato ?? []), ...a.transacoes],
+        extrato: [...(d.extrato ?? []), ...a.transacoes.filter((t) => !jaTem.has(t.id))],
         importacoes: [...(d.importacoes ?? []), a.importacao],
         modelos: a.modelo ? [...modelos, a.modelo] : d.modelos,
       };
@@ -158,8 +173,31 @@ export function ehDados(x: unknown): x is Dados {
   return !!d && typeof d === 'object' && d.versao === 1 && Array.isArray(d.contas) && Array.isArray(d.categorias) && Array.isArray(d.lancamentos);
 }
 
+/**
+ * Religa lançamentos às linhas do extrato que os confirmaram. Versões antigas perdiam essa ligação
+ * ao editar o lançamento, e a linha podia voltar para "a conferir" sozinha.
+ */
+export function religarExtrato(d: Dados): Dados {
+  if (!d.extrato?.length) return d;
+  const porId = new Map(d.lancamentos.map((l) => [l.id, l]));
+  const ligadas = new Set(d.lancamentos.flatMap((l) => [l.extratoId, l.extratoOutraPontaId]).filter(Boolean));
+  let mudou = false;
+  for (const t of d.extrato) {
+    if (t.situacao !== 'confirmada' || !t.lancamentoId || ligadas.has(t.id)) continue;
+    const l = porId.get(t.lancamentoId);
+    if (!l) continue;
+    if (!l.extratoId) porId.set(l.id, { ...l, extratoId: t.id });
+    else if (l.tipo === 'transferencia' && !l.extratoOutraPontaId) porId.set(l.id, { ...l, extratoOutraPontaId: t.id });
+    else continue;
+    ligadas.add(t.id);
+    mudou = true;
+  }
+  return mudou ? { ...d, lancamentos: d.lancamentos.map((l) => porId.get(l.id)!) } : d;
+}
+
 /** Inclui categorias novas do plano padrão em empresas criadas antes delas. */
 export function migrar(d: Dados): Dados {
+  d = religarExtrato(d);
   if (d.empresa && d.empresa.tipo !== 'pessoal' && (d.planoVersao ?? 1) < VERSAO_PLANO) {
     return { ...d, categorias: atualizarPlano(d.categorias, d.planoVersao ?? 1), planoVersao: VERSAO_PLANO };
   }
@@ -246,6 +284,43 @@ export function reducerCofre(c: Cofre, a: Acao | AcaoPerfil): Cofre {
   return { ...c, perfis };
 }
 
+// ---------- Fila de mudanças (nuvem) ----------
+
+/** Uma mudança feita neste aparelho e o perfil em que foi feita (id da empresa; null = cadastro novo). */
+export interface Mudanca {
+  a: Acao | AcaoPerfil;
+  perfil: string | null;
+}
+
+const soNavegacao = (a: Acao | AcaoPerfil) => a.t === 'trocarPerfil' || a.t === 'novoPerfil' || a.t === 'cancelarNovoPerfil';
+
+/**
+ * Refaz, sobre a versão mais nova da nuvem, as mudanças feitas neste aparelho que ainda não tinham sido salvas.
+ * Assim, quando outro aparelho salva no meio do caminho (ou a página é recarregada antes de salvar),
+ * as duas coisas ficam: o que foi feito lá e o que foi feito aqui.
+ */
+export function refazer(remoto: Dados, fila: Mudanca[]): Dados {
+  let c = abrirCofre(remoto);
+  for (const { a, perfil } of fila) {
+    if (soNavegacao(a)) continue;
+    if (perfil === null) {
+      // Cadastro de um perfil novo.
+      if (a.t !== 'iniciar' || c.perfis.some((p) => p.empresa?.id === a.empresa.id)) continue;
+      const branco = c.perfis.findIndex((p) => !p.empresa);
+      c = branco >= 0 ? { ...c, ativo: branco } : reducerCofre(c, { t: 'novoPerfil' });
+      c = reducerCofre(c, a);
+      continue;
+    }
+    const i = c.perfis.findIndex((p) => p.empresa?.id === perfil);
+    if (i < 0) continue;
+    c = reducerCofre({ ...c, ativo: i }, a);
+  }
+  return guardarCofre(c.perfis);
+}
+
+/** Marca única de um envio para a nuvem. */
+export const novoEnvio = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+
 export function carregarLocal(chave = CHAVE): Dados {
   try {
     const bruto = localStorage.getItem(chave);
@@ -277,8 +352,23 @@ interface ValorCtx {
 
 const Ctx = createContext<ValorCtx | null>(null);
 
-export function ProvedorDados({ children, inicial, salvar = salvarLocal }: { children: ReactNode; inicial?: Dados; salvar?: (d: Dados) => void }) {
-  const [cofre, despachar] = useReducer(reducerCofre, inicial, (i) => abrirCofre(i ?? carregarLocal(), lerPerfilAtivo()));
+export function ProvedorDados({ children, inicial, salvar = salvarLocal, aoMudar }: {
+  children: ReactNode;
+  inicial?: Dados;
+  salvar?: (d: Dados) => void;
+  /** Avisado de cada mudança antes de ela acontecer (a nuvem guarda a fila para não perder nada). */
+  aoMudar?: (m: Mudanca) => void;
+}) {
+  const [cofre, despacharBruto] = useReducer(reducerCofre, inicial, (i) => abrirCofre(i ?? carregarLocal(), lerPerfilAtivo()));
+  // Cópia sempre atual do cofre, para saber em que perfil cada mudança foi feita mesmo com várias no mesmo instante.
+  const atual = useRef(cofre);
+  const despachar = useCallback((a: Acao | AcaoPerfil) => {
+    if (aoMudar) {
+      aoMudar({ a, perfil: atual.current.perfis[atual.current.ativo]?.empresa?.id ?? null });
+      atual.current = reducerCofre(atual.current, a);
+    }
+    despacharBruto(a);
+  }, [aoMudar]);
   const guardado = useMemo(() => guardarCofre(cofre.perfis), [cofre.perfis]);
   const primeira = useRef(true);
   useEffect(() => {

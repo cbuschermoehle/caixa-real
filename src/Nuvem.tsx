@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import type { Dados } from './types';
-import { ProvedorDados, vazio } from './data/store';
+import { ProvedorDados, novoEnvio, refazer, vazio, type Mudanca } from './data/store';
 import { SessaoCtx, type EstadoNuvem } from './data/sessao';
 import { baixar, criarConta, entrar, enviar, recuperarSenha, sair, servicoFotos, supabase, trocarSenha, type Session } from './data/nuvem';
 import { Campo } from './components/ui';
@@ -8,9 +8,36 @@ import { App } from './App';
 
 /*
  * Versão publicada: pede login, baixa os dados da conta e salva na nuvem a cada mudança
- * (agrupando mudanças seguidas). Se outro aparelho salvar no meio do caminho, recarrega
- * a versão mais nova em vez de apagar o que foi feito lá.
+ * (agrupando mudanças seguidas). Se outro aparelho salvar no meio do caminho, baixa a versão
+ * mais nova e refaz por cima dela o que foi feito aqui: não se perde nem o de lá nem o daqui.
+ * As mudanças ainda não salvas ficam guardadas nesta aba do navegador; se a página for recarregada
+ * antes de salvar, elas são refeitas ao abrir de novo.
  */
+
+interface FilaGuardada {
+  fila: Mudanca[];
+  /** Marca do envio em andamento e quantas mudanças da fila ele levava. */
+  envio?: string;
+  n?: number;
+}
+
+const chaveFila = (usuario: string) => `caixa-real:fila:${usuario}`;
+function lerFila(usuario: string): FilaGuardada {
+  try {
+    const x = JSON.parse(sessionStorage.getItem(chaveFila(usuario)) ?? 'null');
+    return x && Array.isArray(x.fila) ? x : { fila: [] };
+  } catch {
+    return { fila: [] };
+  }
+}
+function gravarFila(usuario: string, f: FilaGuardada) {
+  try {
+    if (!f.fila.length) sessionStorage.removeItem(chaveFila(usuario));
+    else sessionStorage.setItem(chaveFila(usuario), JSON.stringify(f));
+  } catch {
+    /* sem armazenamento (ou cheio): segue, só sem a proteção contra recarregar */
+  }
+}
 
 export function Nuvem() {
   const [sessao, setSessao] = useState<Session | null | undefined>(undefined);
@@ -38,16 +65,40 @@ function Conectado({ usuario, email }: { usuario: string; email: string }) {
   const [aviso, setAviso] = useState('');
   const revisao = useRef(0);
   const pendente = useRef<Dados | null>(null);
+  // Mudanças feitas aqui e ainda não confirmadas pela nuvem; `noPendente` = quantas delas já estão em `pendente`.
+  const fila = useRef<Mudanca[]>([]);
+  const noPendente = useRef(0);
   const enviando = useRef(false);
   const timer = useRef<number | undefined>(undefined);
 
-  const recarregar = useCallback(async (motivo?: string) => {
+  /**
+   * Baixa a versão da nuvem. Se há mudanças daqui ainda não salvas, refaz por cima dela e manda salvar.
+   * `aviso.juntou` aparece quando foi preciso refazer algo; `aviso.senao`, quando não.
+   */
+  const recarregar = useCallback(async (avisos: { juntou?: string; senao?: string } = {}) => {
     try {
       const r = await baixar(usuario);
       revisao.current = r.revisao;
-      pendente.current = null;
-      setCarga((c) => ({ dados: r.dados ?? vazio, n: (c?.n ?? 0) + 1 }));
-      setEstado('salvo');
+      const remoto = r.dados ?? vazio;
+      const juntos = fila.current.length ? refazer(remoto, fila.current) : null;
+      // Mudanças que não mudam nada (já estavam lá) não contam.
+      if (juntos && JSON.stringify(juntos) === JSON.stringify(refazer(remoto, []))) {
+        fila.current = [];
+        gravarFila(usuario, { fila: [] });
+      }
+      const motivo = fila.current.length ? avisos.juntou : avisos.senao;
+      if (juntos && fila.current.length) {
+        pendente.current = juntos;
+        noPendente.current = fila.current.length;
+        setCarga((c) => ({ dados: juntos, n: (c?.n ?? 0) + 1 }));
+        setEstado('salvando');
+        window.clearTimeout(timer.current);
+        timer.current = window.setTimeout(() => descarregarRef.current(), 300);
+      } else {
+        pendente.current = null;
+        setCarga((c) => ({ dados: remoto, n: (c?.n ?? 0) + 1 }));
+        setEstado('salvo');
+      }
       setErro('');
       if (motivo) setAviso(motivo);
     } catch (e) {
@@ -55,23 +106,49 @@ function Conectado({ usuario, email }: { usuario: string; email: string }) {
     }
   }, [usuario]);
 
+  // Ao abrir: mudanças que ficaram sem salvar da última vez (página recarregada ou fechada no meio).
   useEffect(() => {
-    recarregar();
-  }, [recarregar]);
+    const g = lerFila(usuario);
+    fila.current = g.fila;
+    (async () => {
+      if (g.envio && g.n) {
+        // Se o último envio chegou na nuvem antes de a página fechar, aquelas mudanças já estão lá.
+        try {
+          const r = await baixar(usuario);
+          if (r.dados?.envio === g.envio) fila.current = fila.current.slice(g.n);
+        } catch {
+          /* sem internet: o recarregar abaixo mostra o erro */
+        }
+        gravarFila(usuario, { fila: fila.current });
+      }
+      await recarregar({ juntou: 'Algumas mudanças feitas aqui ainda não tinham sido salvas quando a página foi recarregada. Elas foram refeitas e salvas agora.' });
+    })();
+  }, [recarregar, usuario]);
 
   const descarregar = useCallback(async () => {
     window.clearTimeout(timer.current);
     if (enviando.current || !pendente.current) return;
     const d = pendente.current;
+    const n = noPendente.current;
+    const envio = novoEnvio();
     enviando.current = true;
     setEstado('salvando');
+    gravarFila(usuario, { fila: fila.current, envio, n });
     try {
-      const r = await enviar(usuario, d, revisao.current);
+      const r = await enviar(usuario, { ...d, envio }, revisao.current);
       if (r === 'conflito') {
-        await recarregar('Seus dados foram alterados em outro aparelho. Carregamos a versão mais recente; confira a última coisa que você fez aqui.');
+        enviando.current = false;
+        await recarregar({
+          juntou: 'Este app também foi usado em outro aparelho enquanto você mexia aqui. Juntamos as duas coisas: o que foi feito lá e o que você fez aqui. Confira a última coisa que você fez.',
+          senao: 'Seus dados foram alterados em outro aparelho. Carregamos a versão mais recente.',
+        });
         return;
       }
       revisao.current = r;
+      // As mudanças que foram neste envio estão salvas: saem da fila.
+      fila.current = fila.current.slice(n);
+      noPendente.current -= n;
+      gravarFila(usuario, { fila: fila.current });
       if (pendente.current === d) pendente.current = null;
       setEstado(pendente.current ? 'salvando' : 'salvo');
     } catch (e) {
@@ -84,8 +161,12 @@ function Conectado({ usuario, email }: { usuario: string; email: string }) {
     if (pendente.current) timer.current = window.setTimeout(descarregar, 300);
   }, [usuario, recarregar]);
 
+  const descarregarRef = useRef(descarregar);
+  descarregarRef.current = descarregar;
+
   const salvar = useCallback((d: Dados) => {
     pendente.current = d;
+    noPendente.current = fila.current.length;
     setEstado('salvando');
     window.clearTimeout(timer.current);
     timer.current = window.setTimeout(descarregar, 700);
@@ -123,6 +204,13 @@ function Conectado({ usuario, email }: { usuario: string; email: string }) {
     };
   }, [descarregar, usuario]);
 
+  const aoMudar = useCallback((m: Mudanca) => {
+    // Trocar de perfil não muda os dados: não precisa ir para a fila.
+    if (m.a.t === 'trocarPerfil' || m.a.t === 'novoPerfil' || m.a.t === 'cancelarNovoPerfil') return;
+    fila.current = [...fila.current, m];
+    gravarFila(usuario, { fila: fila.current });
+  }, [usuario]);
+
   const fotos = useMemo(() => servicoFotos(usuario), [usuario]);
   const valor = useMemo(() => ({ email, estado, sair: () => void sair(), fotos }), [email, estado, fotos]);
 
@@ -142,7 +230,7 @@ function Conectado({ usuario, email }: { usuario: string; email: string }) {
 
   return (
     <SessaoCtx.Provider value={valor}>
-      <ProvedorDados key={carga.n} inicial={carga.dados} salvar={salvar}>
+      <ProvedorDados key={carga.n} inicial={carga.dados} salvar={salvar} aoMudar={aoMudar}>
         <App />
       </ProvedorDados>
       {(estado === 'offline' || estado === 'erro') && (

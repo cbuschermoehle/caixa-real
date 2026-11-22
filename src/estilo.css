@@ -281,7 +281,7 @@ body::before { content: ''; position: fixed; inset: 0 0 auto; height: env(safe-a
 .cascata th, .cascata td { padding: 10px 14px; text-align: left; border-top: 1px solid var(--linha); white-space: nowrap; }
 .cascata thead th { border-top: 0; font-size: 0.75rem; color: var(--tinta-2); font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; }
 .cascata .num { text-align: right; }
-.cascata .pct { color: var(--tinta-2); width: 5.5em; }
+.cascata .pct { color: var(--tinta-2); width: 6.5em; }
 .linha-bloco th button { display: inline-flex; align-items: center; gap: 8px; border: 0; background: none; padding: 0; font-weight: 700; cursor: pointer; }
 .operador { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 6px; background: var(--superficie-2); font-size: 0.85rem; color: var(--tinta-2); }
 .seta { display: inline-grid; transition: transform 0.15s; color: var(--tinta-2); }
@@ -619,3 +619,6 @@ input:focus, select:focus { border-color: var(--acento); outline: 2px solid colo
 /* ---------- Ocultar valores ---------- */
 .btn-olho { flex: none; }
 .btn-olho[aria-pressed='true'] { color: var(--acento); background: var(--acento-suave); }
+
+/* Aviso que não impede de salvar (ex.: data antes do saldo inicial, fechamento que não bate). */
+.aviso-leve { color: var(--previsto); background: var(--previsto-suave, transparent); border-radius: 8px; padding: 0.5rem 0.75rem; font-size: 0.85rem; margin: 0.25rem 0; }

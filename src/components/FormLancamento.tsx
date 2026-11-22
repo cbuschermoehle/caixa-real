@@ -77,6 +77,14 @@ export function FormLancamento({ tipoInicial, editar, aoFechar, inicial, aoSalva
     if (!mexeuPago) setPago(d <= hoje());
   };
 
+  // Editando um lançamento avulso (ex.: veio do extrato), dá para mandar repetir todo mês ou todo ano daqui para frente.
+  const podeRepetirEdicao = !!editar && !editar.serieId && !editar.parcela && editar.tipo !== 'transferencia' && !noCartao;
+  const repetirEdicao = podeRepetirEdicao && (repeticao === 'mensal' || repeticao === 'anual');
+  // Conta que começa depois da data escolhida: o lançamento não mexe no saldo dela.
+  const contasAntesDoInicio = data
+    ? [contaSel, tipo === 'transferencia' ? dados.contas.find((c) => c.id === destinoId) : undefined].filter((c): c is NonNullable<typeof c> => !!c && !!c.dataSaldoInicial && data < c.dataSaldoInicial)
+    : [];
+
   const futurosDaSerie = editar?.serieId
     ? dados.lancamentos.filter((l) => l.serieId === editar.serieId && l.id !== editar.id && l.status === 'previsto' && l.data >= editar.data)
     : [];
@@ -106,7 +114,10 @@ export function FormLancamento({ tipoInicial, editar, aoFechar, inicial, aoSalva
     setErros(er);
     if (Object.keys(er).length) return;
 
+    // Começa do lançamento que está sendo editado para não perder nada que o formulário não mostra
+    // (principalmente a ligação com a linha do extrato: sem ela, a linha voltava para "a conferir").
     const baseL: Omit<Lancamento, 'id' | 'data' | 'status'> = {
+      ...editar,
       tipo,
       valor: v!,
       contaId,
@@ -126,7 +137,27 @@ export function FormLancamento({ tipoInicial, editar, aoFechar, inicial, aoSalva
     };
     // Compra no cartão já aconteceu: fica "paga" no cartão. O dinheiro sai quando a fatura é paga.
     const status = noCartao || pago ? 'pago' : 'previsto';
-    if (editar) {
+    if (editar && repetirEdicao) {
+      // Lançamento já existente que passa a se repetir: ele vira o primeiro da série e os próximos entram como previstos.
+      const serieId = novoId();
+      despachar({ t: 'lancamento', lancamento: { ...baseL, id: editar.id, data, status, serieId } });
+      const proximos: Lancamento[] = Array.from({ length: n - 1 }, (_, i) => ({
+        ...baseL,
+        extratoId: undefined,
+        extratoOutraPontaId: undefined,
+        anexo: undefined,
+        repasse: undefined,
+        faturaAuto: undefined,
+        nf: undefined,
+        origem: 'manual',
+        criadoEm: hoje(),
+        id: novoId(),
+        data: somaMeses(data, (i + 1) * passo(repeticao)),
+        status: 'previsto',
+        serieId,
+      }));
+      despachar({ t: 'lancamentos', lancamentos: proximos });
+    } else if (editar) {
       despachar({ t: 'lancamento', lancamento: { ...baseL, id: editar.id, data, status } });
     } else if (repeticao === 'nao') {
       despachar({ t: 'lancamentos', lancamentos: [{ ...baseL, id: novoId(), data, status }] });
@@ -192,6 +223,12 @@ export function FormLancamento({ tipoInicial, editar, aoFechar, inicial, aoSalva
             </Campo>
           )}
         </div>
+        {contasAntesDoInicio.map((c) => (
+          <p key={c.id} className="aviso-leve" role="status">
+            Atenção: o saldo inicial de {c.nome} foi cadastrado em {dataBR(c.dataSaldoInicial)}. Um lançamento com data anterior não muda o saldo dessa conta
+            (mas conta no relatório, e o fechamento do mês não vai bater). Confira a data, ou mude a data do saldo inicial em Ajustes › Contas.
+          </p>
+        ))}
         {tipo === 'transferencia' ? (
           <Campo rotulo="Entra na conta" id="f-destino" erro={erros.destino} ajuda="Transferências não contam como entrada nem saída nos relatórios.">
             <SeletorConta id="f-destino" valor={destinoId} aoMudar={setDestinoId} contas={dados.contas} excluir={contaId} />
@@ -233,15 +270,16 @@ export function FormLancamento({ tipoInicial, editar, aoFechar, inicial, aoSalva
         <Campo rotulo="Descrição (opcional)" id="f-desc">
           <input id="f-desc" value={descricao} onChange={(e) => setDescricao(e.target.value)} placeholder={tipo === 'entrada' ? 'Ex.: Cliente X' : 'Ex.: Conta de energia'} />
         </Campo>
-        {!editar && tipo !== 'transferencia' && (
+        {(!editar || podeRepetirEdicao) && tipo !== 'transferencia' && (
           <div className="campo">
-            <span className="rotulo">Repetir</span>
+            <span className="rotulo">{editar ? 'Repetir daqui para frente' : 'Repetir'}</span>
             <Segmentos
               rotulo="Repetir"
               valor={repeticao}
               aoMudar={(r) => { setRepeticao(r); setAjustar(false); setVezes(r === 'mensal' ? '12' : r === 'anual' ? '5' : '3'); }}
-              opcoes={[{ v: 'nao', r: 'Não repete' }, { v: 'mensal', r: 'Todo mês' }, { v: 'anual', r: 'Todo ano' }, { v: 'parcelado', r: 'Parcelado' }]}
+              opcoes={[{ v: 'nao', r: 'Não repete' }, { v: 'mensal', r: 'Todo mês' }, { v: 'anual', r: 'Todo ano' }, ...(editar ? [] : [{ v: 'parcelado' as const, r: 'Parcelado' }])]}
             />
+            {editar && repeticao === 'nao' && <p className="ajuda">Conta que vence todo mês ou todo ano (taxa de lixo, alvará, certificado digital, domínio do site)? Escolha acima e o app cria as próximas como previstas, a partir desta.</p>}
             {repeticao !== 'nao' && (
               <div className="linha-vezes">
                 <label htmlFor="f-vezes">{repeticao === 'parcelado' ? 'Número de parcelas' : 'Criar para os próximos'}</label>

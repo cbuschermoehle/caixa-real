@@ -363,3 +363,37 @@ export function longoPrazo(dados: Dados, ref: string) {
   lista.sort((a, b) => b.ultima.localeCompare(a.ultima) || b.valorRestante - a.valorRestante);
   return { porAno, series: lista };
 }
+
+export interface Conferencia {
+  inicio: number;
+  variacao: number;
+  fim: number;
+  /** fim − (início + variação). Zero quando o mês fecha. */
+  diferenca: number;
+  /** Contas com lançamentos pagos no mês antes da data do saldo inicial (não mexem no saldo da conta). */
+  antesDoInicio: { conta: Conta; qtd: number; valor: number }[];
+  /** Contas cujo saldo inicial foi cadastrado no meio do mês (entra no fim, mas não na variação). */
+  inicioNoMes: Conta[];
+}
+
+/**
+ * Conferência do caixa do mês: saldo no início + variação do caixa (realizado) deveria dar o saldo no fim.
+ * Quando não dá, aponta as causas mais comuns.
+ */
+export function conferenciaDoMes(dados: Dados, mes: string): Conferencia {
+  const fimMes = ultimoDiaDoMes(mes);
+  const inicio = saldos(dados, `${mes}-01`, true).total;
+  const fim = saldos(dados, fimMes).total;
+  const variacao = cascata(dados, mes).variacao[0];
+  const noTotal = (c: Conta) => c.tipo !== 'cartao' && (!c.arquivada || saldoConta(dados, c, fimMes) !== 0 || saldoConta(dados, c, `${mes}-01`, true) !== 0);
+  const antesDoInicio: Conferencia['antesDoInicio'] = [];
+  for (const conta of dados.contas.filter(noTotal)) {
+    const ls = dados.lancamentos.filter((l) => l.status === 'pago' && mesDe(l.data) === mes && l.data < conta.dataSaldoInicial && (l.contaId === conta.id || l.contaDestinoId === conta.id));
+    if (ls.length) {
+      const valor = ls.reduce((a, l) => a + (l.tipo === 'entrada' || (l.tipo === 'transferencia' && l.contaDestinoId === conta.id) ? l.valor : -l.valor), 0);
+      antesDoInicio.push({ conta, qtd: ls.length, valor });
+    }
+  }
+  const inicioNoMes = dados.contas.filter((c) => noTotal(c) && c.saldoInicial !== 0 && mesDe(c.dataSaldoInicial) === mes && c.dataSaldoInicial > `${mes}-01`);
+  return { inicio, variacao, fim, diferenca: fim - (inicio + variacao), antesDoInicio, inicioNoMes };
+}
